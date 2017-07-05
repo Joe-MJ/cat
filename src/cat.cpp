@@ -2,6 +2,63 @@
 
 char gAbsPath[MAX_LEN];
 
+
+void reportFinish(FILE *fp)
+{
+	if(fp)
+	{
+		fclose(fp);
+	}
+}
+
+FILE *resultReport(char *path)
+{
+	FILE *fp, *rfp = NULL;
+	time_t now;
+	char *buf;
+	char timeName[TEMP_LEN];
+	struct tm *ltm;
+	time(&now);
+	ltm = localtime(&now);
+	buf = (char *)malloc(MAX_LEN*sizeof(char));
+	memset(timeName, 0, TEMP_LEN*sizeof(char));
+	memset(buf, 0, MAX_LEN*sizeof(char));
+	sprintf(timeName, "%d%02d%02d", (1900 + ltm->tm_year), (1 + ltm->tm_mon), ltm->tm_mday);
+	sprintf(buf, "%scatResult_%s.csv", path, timeName);
+	logInfo("report name: %s\n", buf);
+	rfp = fopen(buf, "r");
+	if(rfp == NULL)
+	{
+		//First time to create report
+		fp = fopen(buf, "w");
+		if(fp == NULL)
+		{
+			logError("report file open failed\n");
+			exit(0);
+		}
+		fprintf(fp, "Test File, Frame Num., BM, Y, S, Test Result\n");
+	}
+	else
+	{
+		//File Exist
+		fp = fopen(buf, "a");
+		if(fp == NULL)
+		{
+			logError("report file open failed\n");
+			fclose(rfp);
+			exit(0);
+		}
+		logInfo("report file already exist, overwrite them\n");
+	}
+
+	if(rfp)
+		fclose(rfp);
+	free(buf);
+
+	return fp;
+}
+
+
 void removeFile(char *file)
 {
 	char cmd[256];
@@ -76,7 +133,7 @@ int fileExist(char *fileName)
 		logInfo("%s file doesn't exits\n", fileName);
 		return -1;
 	}
-
+	fclose(fp);
 	return 0;
 }
 

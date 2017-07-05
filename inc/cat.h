@@ -7,13 +7,15 @@
 #include <string.h>
 #include <tchar.h>
 #include <time.h>
+#include <math.h>
 #include "serialClass.h"
 #include "getopt.h"
 #include "logger.h"
 #include "muGadget.h"
 
 #define CAT_VERSION	"0.0.1"
-#define DEBUG	0
+#define DEBUG			0
+#define DEBUG_OUTPUT	0
 #define __RGBWLED__
 
 #define FLAG_CAMBOX_CD					0x00000001  // 0x01
@@ -34,7 +36,6 @@
 
 #define FLAG_3A_VIDEO					0x00008000
 #define FLAG_3A_IMAGE					0x00010000
-#define FLAG_3A_CHIPNAME				0x00020000
 
 #define MAX_LEN			512
 #define TEMP_LEN		128
@@ -127,6 +128,9 @@ typedef struct _camBoxProtocol
 	u32 cmdFlag;
 }camBoxProtocol_t;
 
+extern char gAbsPath[MAX_LEN];
+
+
 extern int camBoxCtrl(int mode, catArg_t arg, const char *comPort, int specFlag);
 extern char* getAbsolutedPath(char *cmdPath, char *exeName);
 extern void catInit(char *path);
@@ -141,4 +145,7 @@ extern char *getRealFileName(char *fileName, char * extension);
 extern int fileExist(char *fileName);
 extern muSize_t getResolution(char *cmd);
 extern void removeFile(char *file);
+extern int aaacheckVideo(catArg_t arg);
+extern FILE *resultReport(char *path);
+extern void reportFinish(FILE *fp);
 #endif

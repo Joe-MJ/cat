@@ -220,6 +220,8 @@ static int processReadBuf(u8 *readBuf, camBoxProtocol_t info)
 				logDebug("cmdFlag=%x cmdId:%x write command finished\n", info.cmdId, info.cmdFlag);
 				break;
 		}
+
+	return 0;
 }
 
 static u8 *writeCmd(u8 *sendBuf, const char *comPort, int cmdId)
@@ -268,7 +270,6 @@ static void processCmd(int cmdFlag, catArg_t arg, const char *comPort)
 {
 	camBoxProtocol_t info;
 	u8 *readBuf;
-	u8 cmdIdAck;
 	info.header = 0xAA;
 	info.cmdId = flag2cmdId(cmdFlag);
 	info.cmdFlag = cmdFlag;
@@ -332,6 +333,8 @@ static void processCmd(int cmdFlag, catArg_t arg, const char *comPort)
 	if(readBuf)
 	{
 		processReadBuf(readBuf, info);
+		if(cmdFlag == FLAG_CAMBOX_SET_RGBW)
+			colorSensor(arg, comPort);
 	}
 	else
 	{
@@ -353,9 +356,6 @@ void deleteSerialPort(int specFlag)
 
 int camBoxCtrl(int mode, catArg_t arg, const char *comPort, int specFlag)
 {
-	int readResult;
-	u8 cmdIdAck;
-	u8 chkSumAck;
 	int cmdFlag;
 
 	// disable the com port bit
@@ -381,7 +381,7 @@ static colorSensorInfo_t calCTLux(camBoxInfo_t *cbInfo)
 	double x, y, z;
 	double sx, sy;
 	double n;
-	int i,j;
+	int j;
 	double map[3][3];
 	colorSensorInfo_t sensorInfo;
 
@@ -498,7 +498,7 @@ void calRGBWLed(catArg_t catArg, const char *comPort)
 	colorSensorInfo_t sensorInfo;
 	ctlArg_t lightArg;
 	
-	for(int i; i<NUM_LIGHT_SOURCE; i++)
+	for(int i=0; i<NUM_LIGHT_SOURCE; i++)
 	{
 		//parsing the predefine distance CT & Lux by LUT
 		lightArg = lightCtrlParser(i);
@@ -545,10 +545,6 @@ void ctlEnv(catArg_t catArg, const char *comPort)
 	//parsing the predefine distance CT & Lux by LUT
 	lightArg = lightCtrlParser(catArg.ctlEnv);
 
-	// move chart to 315mm
-	catArg.distance = lightArg.distance;
-	camBoxCtrl(FLAG_CAMBOX_CD, catArg, comPort, specFlag);
-	gCamBoxInfo.getDistance = lightArg.distance;
 	// control RGB LED
 	catArg.setR = lightArg.r;
 	catArg.setG = lightArg.g;
@@ -578,7 +574,11 @@ void ctlEnv(catArg_t catArg, const char *comPort)
 	Sleep(200);
 	// PI control begin
 	// get color sensor and fine-tune again
-
+	// move chart 
+	catArg.distance = lightArg.distance;
+	camBoxCtrl(FLAG_CAMBOX_CD, catArg, comPort, specFlag);
+	gCamBoxInfo.getDistance = lightArg.distance;
+	
 	sensorInfo = colorSensor(catArg, comPort);
 
 	//lightArg.ct // target
@@ -602,5 +602,5 @@ void ctlEnv(catArg_t catArg, const char *comPort)
 		luxErrorRate = ((sensorInfo.lux/(double)lightArg.lux)-1)*100;
 	}
 	logInfo("Lux ERR = %f%%\n", luxErrorRate);
-
+	return;
 }

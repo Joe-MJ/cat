@@ -106,7 +106,6 @@ static void help()
 "    --cal[-l]\tcalibration the RGBW LED meet the target Lux e.g. --com 4 --cal\n"
 "    --video[-v]\t auto check 3A for case video e.g. cat.exe --chip 95 --video d:\\testVideo.mp4 (only execute without cam box controlling)\n"
 "    --image[-a]\t auto check 3A for image e.g. cat.exe --chip 55 --image d:\\testCapture.jpg (only execute without cam box controlling)\n"
-"    --chip[-k]\t given a chip name for 3A check.[35,37,53,70,95,52]\n"
 	);
 }
 
@@ -157,12 +156,11 @@ int _tmain(int argc, TCHAR** argv)
 			{_T("cal"), ARG_NULL, 0, 'l'},
 			{_T("video"), ARG_REQ, 0, 'v'},
 			{_T("image"), ARG_REQ, 0, 'a'},
-			{_T("chip"), ARG_REQ, 0, 'k'},
 			{_T("help"), ARG_NULL, 0, 'h'},
 			{ARG_NULL, ARG_NULL, ARG_NULL, ARG_NULL}
 		};
 
-		int c = getopt_long(argc, argv, _T("-t:j:d:u:srgbie:m:w:cpflv:a:k:h"), longOptions, &optionIndex);
+		int c = getopt_long(argc, argv, _T("-t:j:d:u:srgbie:m:w:cpflv:a:h"), longOptions, &optionIndex);
 		if(c == -1)
 			break;
 
@@ -225,7 +223,6 @@ int _tmain(int argc, TCHAR** argv)
 		case 'u':
 			com = atoi(optarg);
 			sprintf(comPort, "\\\\.\\COM%d", com);
-			printf("com port = %s\n", comPort);
 			modeFlag |= FLAG_CAMBOX_COM;
 			break;
 		case 'c':
@@ -248,19 +245,12 @@ int _tmain(int argc, TCHAR** argv)
 			}
 			break;
 		case 'v':
-			printf("video\n");
 			modeFlag |= FLAG_3A_VIDEO;
 			catArg.videoName = optarg;
 			break;
 		case 'a':
-			printf("image\n");
 			modeFlag |= FLAG_3A_IMAGE;
 			catArg.imageName = optarg;
-			break;
-		case 'k':
-			printf("chip name\n");
-			modeFlag |= FLAG_3A_CHIPNAME;
-			catArg.chipName = atoi(optarg);
 			break;
 		case 'h':
 		default:
@@ -313,22 +303,13 @@ int _tmain(int argc, TCHAR** argv)
 
 	if( (modeFlag & FLAG_3A_VIDEO) || (modeFlag & FLAG_3A_IMAGE) )
 	{
-		if(modeFlag & FLAG_3A_CHIPNAME)
+		if(modeFlag & FLAG_3A_VIDEO)
 		{
-			if(modeFlag & FLAG_3A_VIDEO)
-			{
-				;
-			}
-			else if(modeFlag & FLAG_3A_IMAGE)
-			{
-				aaacheckImage(catArg);
-			}
+			aaacheckVideo(catArg);
 		}
-		else
+		else if(modeFlag & FLAG_3A_IMAGE)
 		{
-			help();
-			logExit();
-			return 1;
+			aaacheckImage(catArg);
 		}
 	}
 
