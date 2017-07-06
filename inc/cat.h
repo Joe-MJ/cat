@@ -129,7 +129,7 @@ typedef struct _camBoxProtocol
 }camBoxProtocol_t;
 
 extern char gAbsPath[MAX_LEN];
-
+extern char gFailPath[MAX_LEN];
 
 extern int camBoxCtrl(int mode, catArg_t arg, const char *comPort, int specFlag);
 extern char* getAbsolutedPath(char *cmdPath, char *exeName);
@@ -148,4 +148,6 @@ extern void removeFile(char *file);
 extern int aaacheckVideo(catArg_t arg);
 extern FILE *resultReport(char *path);
 extern void reportFinish(FILE *fp);
+extern void genInitFolder(char *path);
+void copyFile(char *src, char *dst);
 #endif

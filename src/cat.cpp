@@ -1,7 +1,17 @@
 #include "cat.h"
 
 char gAbsPath[MAX_LEN];
+char gFailPath[MAX_LEN];
 
+
+void copyFile(char *src, char *dst)
+{
+	char cmd[MAX_LEN];
+	memset(cmd, 0, sizeof(char)*MAX_LEN);
+	sprintf(cmd, "copy %s %s 2>&1", src, dst);
+	runCommand(cmd, NULL);
+	return;
+}
 
 void reportFinish(FILE *fp)
 {
@@ -10,6 +20,33 @@ void reportFinish(FILE *fp)
 		fclose(fp);
 	}
 }
+
+void genInitFolder(char *path)
+{
+	time_t now;
+	char buf[TEMP_LEN];
+	char timeName[TEMP_LEN];
+	char cmd[MAX_LEN];
+	struct tm *ltm;
+	time(&now);
+	ltm = localtime(&now);
+
+	memset(buf, 0, sizeof(char)*TEMP_LEN);
+	memset(timeName, 0, sizeof(char)*TEMP_LEN);
+	memset(cmd, 0, sizeof(char)*MAX_LEN);
+	memset(gFailPath, 0, sizeof(char)*MAX_LEN);
+
+	sprintf(timeName, "%d%02d%02d", (1900 + ltm->tm_year), (1 + ltm->tm_mon), ltm->tm_mday);
+	sprintf(buf, "%sFail_%s", path, timeName);
+	logInfo("Fail Picture path: %s\n", buf);
+	strcpy(gFailPath, buf);
+
+	sprintf(cmd, "md %s 2>&1", buf);
+	runCommand(cmd, NULL);
+
+	return;
+}
+
 
 FILE *resultReport(char *path)
 {
@@ -36,7 +73,7 @@ FILE *resultReport(char *path)
 			logError("report file open failed\n");
 			exit(0);
 		}
-		fprintf(fp, "Test File, Frame Num., BM, Y, S, Test Result\n");
+		fprintf(fp, "Test File, Frame Num., BM, Y, S, AF, AE, AWB\n");
 	}
 	else
 	{
