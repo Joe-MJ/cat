@@ -11,7 +11,8 @@
 #define AWB_TH_1	15.0
 #define AWB_TH_2	12.0
 #define AE_TH		40.0
-#define AF_TH		2.0
+#define AF_TH		2.1
+#define FRAMERATE	15
 
 enum
 {
@@ -23,6 +24,11 @@ enum
 #define NUM_CHIP	13
 u8 chipName[] = {35,37,53,70,95,52,57,97,55,50,99};// this is old debugParser support.
 char gBuf[TEMP_LEN];
+
+typedef struct _labInfo
+{
+	MU_64F l,a,b;
+}labInfo_t;
 
 typedef struct _locateImage
 {
@@ -290,6 +296,10 @@ static locateImage_t *locatePattern(muImage_t *in, int mode)
 		else
 		{
 			w = 2; h = 1;
+			
+			memset(gBuf, 0, sizeof(char)*TEMP_LEN);
+			sprintf(gBuf, "QQero_%dx%d.yuv", yImg->width, yImg->height);
+			saveYImg(gBuf, yImg);
 			logError("locate Image error!!\n");
 		}
 
@@ -327,8 +337,6 @@ static muSize_t getNewResolution(muSize_t oSize)
 	muSize_t nSize;
 	double ratio;
 
-	printf("w :%d h: %d\n", oSize.width, oSize.height);
-
 	if(oSize.width > oSize.height) // horizon image
 	{
 		ratio = (oSize.width/(double)oSize.height);
@@ -364,7 +372,7 @@ static muSize_t getNewResolution(muSize_t oSize)
 
 int aaacheckImage(catArg_t arg)
 {
-	int ret;
+	int ret, bmpFlag = 1;
 	char buf[MAX_LEN];
 	char tempBuf[TEMP_LEN];
 	char *tempName;
@@ -380,11 +388,17 @@ int aaacheckImage(catArg_t arg)
 	
 	if(arg.imageName == NULL)
 		return -1;
+
 	ret = checkExtension(arg.imageName, ".jpg");
 	if(ret)
 	{
-		logError("error input image :%s must a jpg format\n", arg.imageName);
-		return -1;
+		ret = checkExtension(arg.imageName, ".bmp");
+		if(ret)
+		{
+			logError("error input image :%s must a jpg or bmp format\n", arg.imageName);
+			return -1;
+		}
+		bmpFlag = 1;
 	}
 	ret = fileExist(arg.imageName);
 	if(ret)
@@ -411,10 +425,12 @@ int aaacheckImage(catArg_t arg)
 	//transfer the original image to bmp
 	memset(buf, 0, sizeof(char)*MAX_LEN);
 	memset(tempBuf, 0, sizeof(char)*TEMP_LEN);
-	
-	tempName = getRealFileName(arg.imageName, ".jpg");
-	sprintf(tempBuf, "%s.bmp", tempName);
+	if(!bmpFlag)
+		tempName = getRealFileName(arg.imageName, ".jpg");
+	else
+		tempName = getRealFileName(arg.imageName, ".bmp");
 
+	sprintf(tempBuf, "%s.bmp", tempName);
 	sprintf(buf, "%s.\\prebuilt\\magick.exe %s -type truecolor -resize %d!x%d! %s 2>&1", gAbsPath, arg.imageName, nSize.width, nSize.height, tempBuf);
 	ret = runCommand(buf, "error");
 	if(ret)
@@ -455,10 +471,11 @@ int aaacheckImage(catArg_t arg)
 	}
 
 	fprintf(report, "%s,NA,%f,%f,%f,%s,%s,%s\n", arg.imageName, bm, info.hisSD, hsv.avgS, afTestResult, aeTestResult, awbTestResult);
-	
+	logInfo("%s: bm:%f std:%f s:%f\n", arg.imageName, bm, info.hisSD, hsv.avgS);
+
 	if(fail)
 		copyFile(arg.imageName, gFailPath);
-	//logInfo("bm=%f  avgY=%f std=%f avgH=%f  avgS=%f  avgV=%f\n", bm, info.avgY, info.hisSD, hsv.avgH, hsv.avgS, hsv.avgV);
+	
 
 	removeFile(tempBuf);
 	if(inImage)
@@ -478,10 +495,7 @@ int aaacheckImage(catArg_t arg)
 	return 0;
 }
 
-typedef struct _labInfo
-{
-	MU_64F l,a,b;
-}labInfo_t;
+
 
 static labInfo_t getAvgLab(muImage_t *labImg)
 {
@@ -619,19 +633,28 @@ static muImage_t *getROI(muImage_t *yImg, muImage_t *rgbImg, muImage_t *bkImg)
 			current = current->next;
 		}
 		
-		if(cropRect.height > 80)
+		if((cropRect.width*cropRect.height) > (yImg->width*yImg->height*0.1))
 		{
-			cropRect.height = cropRect.height - 80;
-			cropRect.height = cropRect.height - (cropRect.height%4);
-			cropRect.width = cropRect.width - (cropRect.width%4);
+			if(cropRect.height > 80)
+			{
+				cropRect.height = cropRect.height - 80;
+				cropRect.height = cropRect.height - (cropRect.height%4);
+				cropRect.width = cropRect.width - (cropRect.width%4);
+			}
+			cropImg =  muCreateImage(muSize(cropRect.width, cropRect.height), MU_IMG_DEPTH_8U, 3);
+			muSetZero(cropImg);
+			muGetRGBSubImage(rgbImg, cropImg, cropRect);
+		}
+		else
+		{
+			logInfo("black/abnormal scene detect!\n");
+			muSaveBMP("debug_ab_bk_scene.bmp",rgbImg);
+			cropImg = NULL;
 		}
 
 		if(seq)
 			muClearSeq(&seq);
 
-		cropImg =  muCreateImage(muSize(cropRect.width, cropRect.height), MU_IMG_DEPTH_8U, 3);
-		muSetZero(cropImg);
-		muGetRGBSubImage(rgbImg, cropImg, cropRect);
 	}
 
 	if(diffImg)
@@ -667,8 +690,10 @@ static videoResult_t video3aCheck(muImage_t *cropImg, int frameCount, int mode)
 
 	if(mode & AF_CHECK)
 		bm = afCheck(locateImg->subYImg, VIDEO_MODE, frameCount);
+
 	if(mode & AE_CHECK)
 		info = aeCheck(locateImg->yImg);
+
 	if(mode & AWB_CHECK)
 		hsv = awbCheck(locateImg->subRGBImg);
 
@@ -697,7 +722,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	muSeqBlock_t *psCurrent;
 	muPoint_t rpMin, rpMax;
 	int fullFrameSize;
-	int len;
+	int len, startFrameFlag = 0;
 	char buf[TEMP_LEN];
 	char aeTestResult[16], awbTestResult[16], afTestResult[16];
 	int firstFlag, motionFlag = 0, patternFlag;
@@ -731,7 +756,21 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	while(1)
 	{
 		len = fread(rawImg->imagedata, 1, fullFrameSize, fp);
-		if(feof(fp)) break;
+		if(feof(fp)) 
+		{
+			if(startFrameFlag == 1)
+			{
+				logInfo("preview last frame detection! last frameCount:%d\n",(frameCount+1));
+				psData.endFrameCount = frameCount;
+				psData.totalFrame = (psData.endFrameCount - psData.startFrameCount) + 1;
+				psData.totalSecond = muRound(double(psData.totalFrame/(double)FRAMERATE));
+				psData.pNum = previewCount;
+				muPushSeq(psSeq, (MU_VOID *)&psData);
+				previewCount++;
+				startFrameFlag = 0;
+			}
+			break;
+		}
 		if(len != fullFrameSize)
 		{
 			logError("fread raw data error %d\n", len);
@@ -824,6 +863,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 				{
 					logInfo("preview first frame detection! frameCount:%d\n", (frameCount+1));
 					psData.startFrameCount = frameCount;
+					startFrameFlag = 1;
 				}
 #if DEBUG_OUTPUT
 	muDrawRectangle(rgbImg, rpMin, rpMax, 'r');
@@ -837,10 +877,11 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					logInfo("preview last frame detection! frameCount:%d\n",(frameCount+1));
 					psData.endFrameCount = frameCount;
 					psData.totalFrame = (psData.endFrameCount - psData.startFrameCount) + 1;
-					psData.totalSecond = muRound(double(psData.totalFrame/(double)30));
+					psData.totalSecond = muRound(double(psData.totalFrame/(double)FRAMERATE));
 					psData.pNum = previewCount;
 					muPushSeq(psSeq, (MU_VOID *)&psData);
 					previewCount++;
+					startFrameFlag = 0;
 				}
 				patternFlag = 0;
 			}
@@ -873,7 +914,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	//analyze real video part
 	psCurrent = psSeq->first;
 	int totalFrame;
-	int k = 0;
+	int k = 0, count = 0;
 	int startFlag;
 	long long lenfp;
 	int fail;
@@ -883,7 +924,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	while(psCurrent != NULL)
 	{
 		ppsData = (previewScene_t *)psCurrent->data;
-		logInfo("no:%d sf: %d  ef: %d totalf: %d totals:%d\n",ppsData->pNum, ppsData->startFrameCount, ppsData->endFrameCount, ppsData->totalFrame, ppsData->totalSecond);
+		logInfo("no:%d s-f: %d  e-f: %d total-f: %d total-s:%d\n",ppsData->pNum, ppsData->startFrameCount, ppsData->endFrameCount, ppsData->totalFrame, ppsData->totalSecond);
 		totalFrame =  ppsData->totalFrame;
 		fp = fopen(rawFile, "rb");
 		seekidx = (long long)((long long)fullFrameSize*(long long)ppsData->startFrameCount);
@@ -904,6 +945,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 		resultSum.bm = 0;
 		resultSum.s = 0;
 		resultSum.y = 0;
+		count = 0;
 		while(--totalFrame)
 		{
 			memset(aeTestResult, 0, sizeof(char)*16);
@@ -914,11 +956,16 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 			memcpy(yImg->imagedata, rawImg->imagedata, yImg->width*yImg->height*sizeof(MU_8U));
 			muYUV420toRGB(rawImg, rgbImg);
 			cCropImg = getROI(yImg, rgbImg, blackImg);
-			//af check by last 30 frames.
+			if(cCropImg == NULL)
+			{
+				frameCount++;
+				continue;
+			}
+			//af check by last FRAMERATE frames.
 			if(startFlag)
 			{
 				//DeltaE--
-				if((ppsData->endFrameCount - frameCount) > 30)
+				if((ppsData->endFrameCount - frameCount) > FRAMERATE)
 				{
 					deltaE = getDeltaE(cCropImg, pCropImg);
 					//AWB cast cehck
@@ -954,16 +1001,17 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					resultSum.bm += result.bm;
 					resultSum.s += result.s;
 					resultSum.y += result.y;
-					logInfo("last 30 frames AWB:%f  AE:%f  AF:%f fc:%d\n",result.s, result.y, result.bm, (frameCount+1));
+					count++;
+					logInfo("last frames AWB:%f  AE:%f  AF:%f fc:%d\n",result.s, result.y, result.bm, (frameCount+1));
 					if(frameCount == (ppsData->endFrameCount - 1))
 					{
 						logInfo("last Preview Frame!\n");
 						sprintf(aeTestResult, "PASS");
 						sprintf(afTestResult, "PASS");
 						sprintf(awbTestResult, "PASS");
-						result.bm = resultSum.bm/30.0;
-						result.s = resultSum.s/30.0;
-						result.y = resultSum.y/30.0;
+						result.bm = resultSum.bm/(double)count;
+						result.s = resultSum.s/(double)count;
+						result.y = resultSum.y/(double)count;
 						if(result.bm > AF_TH)
 						{
 							fail = 1;
@@ -990,7 +1038,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 							muSaveBMP(buf, rgbImg);
 						}
 
-						fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s\n", videoName, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult);
+						fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s\n", videoName, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult);
 					}
 				}
 
@@ -1025,7 +1073,8 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 			startFlag = 1;
 			pCropImg = muCreateImage(muSize(cCropImg->width,cCropImg->height), MU_IMG_DEPTH_8U, cCropImg->channels);
 			memcpy(pCropImg->imagedata, cCropImg->imagedata, cCropImg->width*cCropImg->height*sizeof(MU_8U)*cCropImg->channels);
-			muReleaseImage(&cCropImg);
+			if(cCropImg)
+				muReleaseImage(&cCropImg);
 			frameCount++;
 
 			if(fail)
@@ -1033,7 +1082,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 #if DEBUG_OUTPUT
 			fwrite(rawImg->imagedata, 1, fullFrameSize, fw);
 #endif
-		}
+		} //while
 
 #if DEBUG_OUTPUT
 		fclose(fw);
@@ -1061,7 +1110,6 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	if(report)
 		reportFinish(report);
 
-	removeFile(rawFile);
 	return 0;
 }
 
@@ -1116,11 +1164,11 @@ int aaacheckVideo(catArg_t arg)
 	tempName = getRealFileName(arg.videoName, ".mp4");
 	sprintf(tempBuf, "%s.yuv", tempName);
 
-	sprintf(buf, "%s.\\prebuilt\\ffmpeg.exe -i %s -c:v rawvideo -pix_fmt yuv420p -y %s 2>&1", gAbsPath, arg.videoName, tempBuf);
+	sprintf(buf, "%s.\\prebuilt\\ffmpeg.exe -i %s -c:v rawvideo -pix_fmt yuv420p -r %d -y %s 2>&1", gAbsPath, arg.videoName, FRAMERATE, tempBuf);
 	ret = runCommand(buf, "error");
 	if(ret)
 	{
-		logInfo("transfer bmp failed\n");
+		logInfo("transfer mp4 to yuv420 failed\n");
 		return -1;
 	}
 
@@ -1132,6 +1180,6 @@ int aaacheckVideo(catArg_t arg)
 		return -1;
 
 	videoCheck(tempBuf, arg.videoName, size);
-
+	//removeFile(tempBuf);
 	return 0;
 }
