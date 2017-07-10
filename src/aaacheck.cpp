@@ -12,7 +12,9 @@
 #define AWB_TH_2	12.0
 #define AE_TH		40.0
 #define AF_TH		2.1
+#define BLACK_TH	15
 #define FRAMERATE	15
+#define LAST_FRAME	5
 
 enum
 {
@@ -23,7 +25,10 @@ enum
 // > kibo+ support new debugparser
 #define NUM_CHIP	13
 u8 chipName[] = {35,37,53,70,95,52,57,97,55,50,99};// this is old debugParser support.
+
+//for debug;
 char gBuf[TEMP_LEN];
+FILE *gFp = NULL;
 
 typedef struct _labInfo
 {
@@ -635,6 +640,7 @@ static muImage_t *getROI(muImage_t *yImg, muImage_t *rgbImg, muImage_t *bkImg)
 		
 		if((cropRect.width*cropRect.height) > (yImg->width*yImg->height*0.1))
 		{
+			hsvData_t avgHsv;
 			if(cropRect.height > 80)
 			{
 				cropRect.height = cropRect.height - 80;
@@ -644,6 +650,13 @@ static muImage_t *getROI(muImage_t *yImg, muImage_t *rgbImg, muImage_t *bkImg)
 			cropImg =  muCreateImage(muSize(cropRect.width, cropRect.height), MU_IMG_DEPTH_8U, 3);
 			muSetZero(cropImg);
 			muGetRGBSubImage(rgbImg, cropImg, cropRect);
+			avgHsv = awbCheck(cropImg);
+			if(avgHsv.avgV < BLACK_TH && avgHsv.avgS < BLACK_TH)
+			{
+				logInfo("black/abnormal scene detect!\n");
+				muSaveBMP("debug_ab_bk_hsvChk_scene.bmp",rgbImg);
+				cropImg = NULL;
+			}
 		}
 		else
 		{
@@ -965,17 +978,18 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 			if(startFlag)
 			{
 				//DeltaE--
-				if((ppsData->endFrameCount - frameCount) > FRAMERATE)
+				if((ppsData->endFrameCount - frameCount) > LAST_FRAME)
 				{
 					deltaE = getDeltaE(cCropImg, pCropImg);
 					//AWB cast cehck
 					if(deltaE > 2)
 					{
+						logInfo("deltaE = %f  fc = %d\n", deltaE, (frameCount+1));
 						result = video3aCheck(cCropImg, (frameCount+1), AWB_CHECK);
 						sprintf(afTestResult, "NA");
 						sprintf(awbTestResult, "PASS");
 						sprintf(aeTestResult, "PASS");
-						logInfo("deltaE = %f  AWB:%f  fc = %d\n", deltaE, result.s, (frameCount+1));
+						logInfo("AWB:%f ", result.s);
 						if(result.s > AWB_TH_1)
 						{
 							fail = 1;
@@ -1070,6 +1084,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 
 				fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s\n", videoName, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult);
 			}
+
 			startFlag = 1;
 			pCropImg = muCreateImage(muSize(cCropImg->width,cCropImg->height), MU_IMG_DEPTH_8U, cCropImg->channels);
 			memcpy(pCropImg->imagedata, cCropImg->imagedata, cCropImg->width*cCropImg->height*sizeof(MU_8U)*cCropImg->channels);
@@ -1180,6 +1195,9 @@ int aaacheckVideo(catArg_t arg)
 		return -1;
 
 	videoCheck(tempBuf, arg.videoName, size);
-	//removeFile(tempBuf);
+
+#if DEBUG_OUTPUT
+	removeFile(tempBuf);
+#endif
 	return 0;
 }
