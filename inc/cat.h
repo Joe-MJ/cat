@@ -14,8 +14,12 @@
 #include "muGadget.h"
 
 #define CAT_VERSION	"0.0.1"
-#define DEBUG			0
-#define DEBUG_OUTPUT	0
+#define DEBUG						0
+#define DEBUG_OUTPUT				0
+#define DEBUG_OUTPUT_PREVIEW_BMP	0
+#define DEBUG_OUTPUT_PREVIEW_YUV	0
+#define DEBUG_OUTPUT_RAW_FILE		0
+#define DEBUG_OUTPUT_TEST_FILE		1
 #define __RGBWLED__
 
 #define FLAG_CAMBOX_CD					0x00000001  // 0x01
@@ -130,6 +134,7 @@ typedef struct _camBoxProtocol
 
 extern char gAbsPath[MAX_LEN];
 extern char gFailPath[MAX_LEN];
+extern char gTestFilePath[MAX_LEN];
 
 extern int camBoxCtrl(int mode, catArg_t arg, const char *comPort, int specFlag);
 extern char* getAbsolutedPath(char *cmdPath, char *exeName);
@@ -149,5 +154,7 @@ extern int aaacheckVideo(catArg_t arg);
 extern FILE *resultReport(char *path);
 extern void reportFinish(FILE *fp);
 extern void genInitFolder(char *path);
-void copyFile(char *src, char *dst);
+extern void genTestFileFolder(char *path);
+extern void copyFile(char *src, char *dst);
+extern char *getTimeName();
 #endif
