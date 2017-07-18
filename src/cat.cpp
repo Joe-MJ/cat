@@ -271,7 +271,7 @@ int runCommand(char *cmd, char *delima)
 	}
 	while(fgets(pBuf, MAX_LEN, pipe))
 	{
-		logInfo("%s\n", pBuf);
+		//logInfo("%s\n", pBuf);
 		if(delima != NULL)
 		{
 			pch = strstr(pBuf, delima);
