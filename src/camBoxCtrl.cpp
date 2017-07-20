@@ -10,6 +10,7 @@ static u8 timeOutTbl[14] = {0, 120, 10, 10, 10, 10, 3, 13, 5, 3, 3, 120, 3, 0};
 
 
 static camBoxInfo_t gCamBoxInfo;
+static colorSensorInfo_t  gColorSensorInfo;
 
 //32cm
 static double cm1[3][3] = {{2.92616, -7.35237, 3.83898}, 
@@ -38,7 +39,7 @@ static double cm5[3][3] = {{0.97773, 0.1736, -0.55704},
 							{0.03858, 0.12519, 0.9182}};
 
 
-//255mm lux 20~500 2300~6500
+//255mm lux 20~500 2300~5300
 static double cm6[3][3] = {{2.1295, -2.4713, 1.06151},
 							 {0.90166, -2.0155, 0.09866},
 							 {1.55344, -7.03093, 4.26652}};
@@ -93,6 +94,58 @@ static double cmw315[3][3] = {{4.48309, 1.29430, 3.03152},
 static double cmw343[3][3] = {{4.09517, 1.15818, 2.72797},
 							 {1.65877, 10.14232, -1.34990},
 							 {-1.50681, -5.40392, 18.16374}};
+
+
+static double cmwnw315[3][3] = {{5.38701, 0.93079, 3.9253},
+							 {2.21152, 13.38064, -1.6502},
+							 {-2.04567, -7.96042, 26.54781}};
+		
+
+
+static double nw315[3][3] = {{2.4274, 69.18082, -60.51781},
+							 {2.47945, 70.36438, -61.96164},
+							 {1.18904, 36.08767, -29.03288}};
+
+
+static double bw315[3][3] = {{6.13448, 41.41552, -37.78448},
+							 {6.43103, 44.96897, -41.03103},
+							 {4.96069, 35.5431, -30.8569}};
+
+
+static double ww315[3][3] = {{-3.44535, -43.10233, 102.61977},
+							 {-2.90698, -37.44651, 90.69535},
+							 {-1.579074, -18.26047, 38.81395}};
+
+
+static double nw343[3][3] = {{-11.73571, 18.32143, 24.55},
+							 {-12.00357, 19.38214, 23.925},
+							 {-5.78929, 10.25357, 13.425}};
+
+
+static double bw343[3][3] = {{5.54828, 42.40172, -38.79828},
+							 {5.82414, 45.52586, -41.67414},
+							 {4.7931, 33.9569, -30.0431}};
+
+
+static double ww343[3][3] = {{9.98372, -41.25349, 43.90233},
+							 {8.97209, -37.24884, 40.43256},
+							 {3.4093, -12.98372, 11.45581}};
+
+
+static double nw570[3][3] = {{-5.3, 7.25, 12.45},
+							 {-5.4, 7, 12.9},
+							 {-2.64286, 4.45, 6.43571}};
+
+
+static double bw570[3][3] = {{2.94483, 21.10517, -19.39483},
+							 {2.90345, 22.59655, -20.50345},
+							 {2.46207, 16.53793, -14.56207}};
+
+
+
+static double ww570[3][3] = {{2.75, -13.09286, 19.34286},
+							 {2.42, -11.76857, 17.90857},
+							 {0.92, -3.842, 4.88}};
 
 
 
@@ -308,7 +361,7 @@ static void processCmd(int cmdFlag, catArg_t arg, const char *comPort)
 		info.data1 = arg.setR;
 		info.data2 = arg.setG;
 		info.data3 = arg.setB;
-		printf("rgb: %d %d %d\n", info.data1, info.data2, info.data3);
+		logInfo("rgb: %d %d %d\n", info.data1, info.data2, info.data3);
 		break;
 	case FLAG_CAMBOX_SET_RGBW:
 		info.data1 = arg.setR;
@@ -316,7 +369,7 @@ static void processCmd(int cmdFlag, catArg_t arg, const char *comPort)
 		info.data3 = arg.setB;
 		info.data4 = arg.setW;
 		info.data5 = arg.wct;
-		printf("rgbw: %d %d %d %d %d\n", info.data1, info.data2, info.data3, info.data4, info.data5);
+		logInfo("rgbw: %d %d %d %d %d\n", info.data1, info.data2, info.data3, info.data4, info.data5);
 		break;
 	case FLAG_CAMBOX_COLOR_SENSOR:
 		break;
@@ -334,7 +387,9 @@ static void processCmd(int cmdFlag, catArg_t arg, const char *comPort)
 	{
 		processReadBuf(readBuf, info);
 		if(cmdFlag == FLAG_CAMBOX_SET_RGBW)
-			colorSensor(arg, comPort);
+		{
+			gColorSensorInfo = colorSensor(arg, comPort);
+		}
 	}
 	else
 	{
@@ -378,7 +433,7 @@ int camBoxCtrl(int mode, catArg_t arg, const char *comPort, int specFlag)
 static colorSensorInfo_t calCTLux(camBoxInfo_t *cbInfo)
 {
 	double r,g,b, in;
-	double x, y, z;
+	double x = 0, y = 0, z = 0;
 	double sx, sy;
 	double n;
 	int j;
@@ -394,16 +449,31 @@ static colorSensorInfo_t calCTLux(camBoxInfo_t *cbInfo)
 	switch (cbInfo->getDistance)
 	{
 	case 570:
-		memcpy(map, cmw570, sizeof(map));
-		logDebug("cmw570 selected\n");
+		if(cbInfo->wct == BLUEWHITE)
+			memcpy(map, bw570, sizeof(map));
+		else if(cbInfo->wct == NATUREWHITE)
+			memcpy(map, nw570, sizeof(map));
+		else
+			memcpy(map, ww570, sizeof(map));
+		logInfo("570 selected\n");
 		break;
 	case 343:
-		memcpy(map, cmw343, sizeof(map));
-		logDebug("cmw343 selected\n");
+		if(cbInfo->wct == BLUEWHITE)
+			memcpy(map, bw343, sizeof(map));
+		else if(cbInfo->wct == NATUREWHITE)
+			memcpy(map, nw343, sizeof(map));
+		else
+			memcpy(map, ww343, sizeof(map));
+		logInfo("343 selected\n");
 		break;
 	case 315:
-		memcpy(map, cmw315, sizeof(map));
-		logDebug("cmw315 selected\n");
+		if(cbInfo->wct == BLUEWHITE)
+			memcpy(map, bw315, sizeof(map));
+		else if(cbInfo->wct == NATUREWHITE)
+			memcpy(map, nw315, sizeof(map));
+		else
+			memcpy(map, ww315, sizeof(map));
+		logInfo("315 selected\n");
 		break;
 	default:
 		logError("sensor corelation matrix not support this distance:%d", cbInfo->getDistance);
@@ -428,15 +498,22 @@ static colorSensorInfo_t calCTLux(camBoxInfo_t *cbInfo)
 	}
 #endif
 
-	for(j=0; j<3; j++)
+	if(r == 0 && g == 0 && b == 0)
 	{
-		if(j == 0)
-			 x = (r * map[j][0]) + (g * map[j][1]) + (b * map[j][2]);
-		else if(j == 1)
-			 y = (r * map[j][0]) + (g * map[j][1]) + (b * map[j][2]);
-		else
-			 z = (r * map[j][0]) + (g * map[j][1]) + (b * map[j][2]);
+		x = 0; y = 0; z = 0;
+	}
+	else
+	{
+		for(j=0; j<3; j++)
+		{
+			if(j == 0)
+				 x = (r * map[j][0]) + (g * map[j][1]) + (b * map[j][2]);
+			else if(j == 1)
+				 y = (r * map[j][0]) + (g * map[j][1]) + (b * map[j][2]);
+			else
+				 z = (r * map[j][0]) + (g * map[j][1]) + (b * map[j][2]);
 				
+		}
 	}
 
 	cbInfo->lux = y;
@@ -464,7 +541,7 @@ colorSensorInfo_t colorSensor(catArg_t catArg, const char *comPort)
 	int times = 5;
 	colorSensorInfo_t sensorInfo;
 	camBoxInfo_t sumCamBoxInfo = {0};
-
+	logInfo("sense color spetrum\n");
 	camBoxCtrl(FLAG_CAMBOX_GET_DISTANCE, catArg, comPort, specFlag);
 	for(int i=0; i<times; i++)
 	{
@@ -488,6 +565,7 @@ colorSensorInfo_t colorSensor(catArg_t catArg, const char *comPort)
 	gCamBoxInfo.getB = sumCamBoxInfo.getB/(double)times;
 	gCamBoxInfo.getI = sumCamBoxInfo.getI/(double)times;
 	//cal CT & Lux
+	gCamBoxInfo.wct = catArg.wct;
 	sensorInfo = calCTLux(&gCamBoxInfo);
 	return sensorInfo;
 }
@@ -517,7 +595,7 @@ void calRGBWLed(catArg_t catArg, const char *comPort)
 		case 4000:
 			catArg.wct = NATUREWHITE;
 			break;
-		case 6500:
+		case 5300:
 			catArg.wct = BLUEWHITE;
 			break;
 		default:
@@ -539,7 +617,6 @@ void ctlEnv(catArg_t catArg, const char *comPort)
 	int specFlag = 1;
 	int type;
 	ctlArg_t lightArg;
-	colorSensorInfo_t sensorInfo;
 	double ctErrorRate, luxErrorRate;
 
 	//parsing the predefine distance CT & Lux by LUT
@@ -561,7 +638,7 @@ void ctlEnv(catArg_t catArg, const char *comPort)
 	case 4000:
 		catArg.wct = NATUREWHITE;
 		break;
-	case 6500:
+	case 5300:
 		catArg.wct = BLUEWHITE;
 		break;
 	default:
@@ -571,7 +648,6 @@ void ctlEnv(catArg_t catArg, const char *comPort)
 #elif defined(__LEDBULBS__)
 	;
 #endif
-	Sleep(200);
 	// PI control begin
 	// get color sensor and fine-tune again
 	// move chart 
@@ -579,27 +655,25 @@ void ctlEnv(catArg_t catArg, const char *comPort)
 	camBoxCtrl(FLAG_CAMBOX_CD, catArg, comPort, specFlag);
 	gCamBoxInfo.getDistance = lightArg.distance;
 	
-	sensorInfo = colorSensor(catArg, comPort);
-
 	//lightArg.ct // target
-	if(lightArg.ct >= sensorInfo.ct)
+	if(lightArg.ct >= gColorSensorInfo.ct)
 	{
-		ctErrorRate = ((lightArg.ct/(double)sensorInfo.ct)-1)*100;
+		ctErrorRate = ((lightArg.ct/(double)gColorSensorInfo.ct)-1)*100;
 	}
 	else
 	{
-		ctErrorRate = ((sensorInfo.ct/(double)lightArg.ct)-1)*100;
+		ctErrorRate = ((gColorSensorInfo.ct/(double)lightArg.ct)-1)*100;
 	}
 
 	logInfo("CT ERR = %f%%\n", ctErrorRate);
 
-	if(lightArg.lux >= sensorInfo.lux)
+	if(lightArg.lux >= gColorSensorInfo.lux)
 	{
-		luxErrorRate = ((lightArg.lux/(double)sensorInfo.lux)-1)*100;
+		luxErrorRate = ((lightArg.lux/(double)gColorSensorInfo.lux)-1)*100;
 	}
 	else
 	{
-		luxErrorRate = ((sensorInfo.lux/(double)lightArg.lux)-1)*100;
+		luxErrorRate = ((gColorSensorInfo.lux/(double)lightArg.lux)-1)*100;
 	}
 	logInfo("Lux ERR = %f%%\n", luxErrorRate);
 	return;

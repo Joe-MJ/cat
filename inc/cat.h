@@ -102,6 +102,7 @@ typedef struct _camBoxInfo
 {
 	u16 getR, getG, getB, getI;
 	u16 getDistance;
+	int wct;
 	double ct, lux;
 }camBoxInfo_t;
 

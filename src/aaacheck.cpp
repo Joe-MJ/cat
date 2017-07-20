@@ -954,9 +954,9 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 		ppsData = (previewScene_t *)psCurrent->data;
 		logInfo("no:%d s-f: %d  e-f: %d total-f: %d total-s:%d\n",ppsData->pNum, ppsData->startFrameCount, ppsData->endFrameCount, ppsData->totalFrame, ppsData->totalSecond);
 		totalFrame =  ppsData->totalFrame;
-		if(ppsData->totalSecond < 2)
+		if(ppsData->totalSecond < 3)
 		{
-			logInfo("preview length < 2 second, ignore test\n");
+			logInfo("preview length < 3 second, ignore test\n");
 			psCurrent = psCurrent->next;
 			continue;
 		}
@@ -988,6 +988,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 			memset(aeTestResult, 0, sizeof(char)*16);
 			memset(afTestResult, 0, sizeof(char)*16);
 			memset(awbTestResult, 0, sizeof(char)*16);
+			memset(flickTestResult, 0, sizeof(char)*16);
 			fail = 0;
 			fread(rawImg->imagedata, 1, fullFrameSize, fp);
 			memcpy(yImg->imagedata, rawImg->imagedata, yImg->width*yImg->height*sizeof(MU_8U));
