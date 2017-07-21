@@ -121,9 +121,17 @@ int _tmain(int argc, TCHAR** argv)
 	int specFlag = 0;
 	int temp;
 	char comPort[16];
+	char buf[TEMP_LEN];
 	int com;
 	char *absPath;
 	int idx;
+
+	/* -- for debugging
+	argc = 3;
+	argv[0] = "cat";
+	argv[1] = "--video";
+	argv[2] = "D:\\Project\\Windows\\cat\\Debug\\FalseAlarm\\Bianco-Camera_414_07_21_00_31_14.mp4";
+	*/
 
 	if(argc < 2)
 	{
@@ -167,55 +175,45 @@ int _tmain(int argc, TCHAR** argv)
 		switch(c)
 		{
 		case 's':
-			printf("get ultrasonic distance\n");
 			modeFlag |= FLAG_CAMBOX_GET_DISTANCE;
 			break;
 		case 'r':
-			printf("get R value\n");
 			modeFlag |= FLAG_CAMBOX_GET_R;
 			break;
 		case 'g':
-			printf("get G value\n");
 			modeFlag |= FLAG_CAMBOX_GET_G;
 			break;
 		case 'b':
-			printf("get B value\n");
 			modeFlag |= FLAG_CAMBOX_GET_B;
 			break;
 		case 'i':
-			printf("get i value\n");
 			modeFlag |= FLAG_CAMBOX_GET_I;
 			break;
 		case 'e':
-			printf("ctrl led\n");
 			catArg.setLED = atoi(optarg);
 			modeFlag |= FLAG_CAMBOX_LED_CTRL;
 			break;
 		case 'm':
-			printf("set RGB  Matrix\n");
 			RGBParser(optarg, &catArg);
 			modeFlag |= FLAG_CAMBOX_SET_RGB;
 			break;
 		case 'w':
-			printf("set RGBW strip\n");
 			RGBWParser(optarg, &catArg);
 			modeFlag |= FLAG_CAMBOX_SET_RGBW;
 			if((catArg.wct != WARMWHITE && catArg.wct != NATUREWHITE) && (catArg.wct != BLUEWHITE))
 			{
-				printf("rgbw only support three types color temperature ww,nw,bw\n");
+				logError("rgbw only support three types color temperature ww,nw,bw\n");
 				return 1;
 			}
 			break;
 		case 'l':
-			printf("RGBW Calibration\n");
 			modeFlag |= FLAG_CAMBOX_RGBW_CAL;
 			break;
 		case 'd':
-			printf("chart distance select\n");
 			catArg.distance = atoi(optarg);
 			if((catArg.distance != 315) && (catArg.distance != 343) && (catArg.distance != 570))
 			{
-				printf("chart distance must in range 315,343,570 mm\n");
+				logError("chart distance must in range 315,343,570 mm\n");
 				return 1;
 			}
 			modeFlag |= FLAG_CAMBOX_CD;
@@ -240,7 +238,7 @@ int _tmain(int argc, TCHAR** argv)
 			catArg.ctlEnv = atoi(optarg);
 			if(catArg.ctlEnv > 13 || catArg.ctlEnv < 1)
 			{
-				printf("CT Type range is 1~13\n");
+				logError("CT Type range is 1~13\n");
 				return 1;
 			}
 			break;
@@ -265,6 +263,16 @@ int _tmain(int argc, TCHAR** argv)
 		catInit(absPath);
 	}
 
+	memset(buf, 0, sizeof(char)*TEMP_LEN);
+	for(int i=0; i<argc; i++)
+	{
+		strcat(buf, argv[i]);
+		strcat(buf, " ");
+	}
+	logInfo("%s\n", buf);
+
+
+
 	if((modeFlag & FLAG_CAMBOX_CD) || (modeFlag & FLAG_CAMBOX_RGBW_CAL) || (modeFlag & FLAG_CAMBOX_CT) || (modeFlag & FLAG_CAMBOX_GET_DISTANCE) 
 		|| (modeFlag & FLAG_CAMBOX_GET_R) || (modeFlag & FLAG_CAMBOX_GET_G) || (modeFlag & FLAG_CAMBOX_GET_B) || (modeFlag & FLAG_CAMBOX_GET_I)
 		|| (modeFlag & FLAG_CAMBOX_LED_CTRL) || (modeFlag & FLAG_CAMBOX_SET_RGB) || (modeFlag & FLAG_CAMBOX_COLOR_SENSOR) || (modeFlag & FLAG_CAMBOX_GET_PI)
@@ -279,13 +287,11 @@ int _tmain(int argc, TCHAR** argv)
 			}
 			else if(modeFlag & FLAG_CAMBOX_CT)
 			{
-				printf("set cambox ctl environment\n");
 				ctlEnv(catArg, comPort);
 				deleteSerialPort(0);
 			}
 			else if(modeFlag & FLAG_CAMBOX_RGBW_CAL)
 			{
-				printf("RGBW Calibration begin!\n");
 				deleteSerialPort(0);
 			}
 			else
@@ -312,8 +318,9 @@ int _tmain(int argc, TCHAR** argv)
 			aaacheckImage(catArg);
 		}
 	}
-
+	logInfo("log Finish\n");
 	logExit();
+	system("pause");
 	return 0;
 }
 

@@ -611,6 +611,10 @@ static muImage_t *getROI(muImage_t *yImg, muImage_t *rgbImg, muImage_t *bkImg)
 	muErode33(thImg, eroImg);
 	muDilate33(eroImg, diImg);
 
+	printf("%d  %d\n", diImg->width, diImg->height);
+	saveYImg("123.yuv", diImg);
+
+
 	mu4ConnectedComponent8u(diImg, labImg, &numLabel);
 	if(numLabel > 1)
 	{
@@ -940,7 +944,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	psCurrent = psSeq->first;
 	int totalFrame;
 	int k = 0, count = 0;
-	int startFlag;
+	int startFlag, castOnly;
 	long long lenfp;
 	int fail, everFail = 0;
 	MU_64F deltaE;
@@ -951,14 +955,16 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	sprintf(videoTemp, "%s_%s.mp4", tempRealName, timeName);
 	while(psCurrent != NULL)
 	{
+		castOnly = 0;
 		ppsData = (previewScene_t *)psCurrent->data;
 		logInfo("no:%d s-f: %d  e-f: %d total-f: %d total-s:%d\n",ppsData->pNum, ppsData->startFrameCount, ppsData->endFrameCount, ppsData->totalFrame, ppsData->totalSecond);
 		totalFrame =  ppsData->totalFrame;
 		if(ppsData->totalSecond < 3)
 		{
-			logInfo("preview length < 3 second, ignore test\n");
-			psCurrent = psCurrent->next;
-			continue;
+			logInfo("preview length < 3 second, ignore test -- just check delta-E and color cast\n");
+			castOnly = 1;
+			//psCurrent = psCurrent->next;
+			//continue;
 		}
 		fp = fopen(rawFile, "rb");
 		seekidx = (long long)((long long)fullFrameSize*(long long)ppsData->startFrameCount);
@@ -1015,7 +1021,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 			if(startFlag)
 			{
 				//DeltaE-
-				if((ppsData->endFrameCount - frameCount) > LAST_FRAME)
+				if(((ppsData->endFrameCount - frameCount) > LAST_FRAME) || castOnly)
 				{
 					deltaE = getDeltaE(cCropImg, pCropImg);
 					//AWB cast cehck
@@ -1051,7 +1057,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 						keepCount++;
 						if(keepCount > FLICK_TH)
 						{
-							logError("FLICK:FAIL");
+							logError("FLICK:FAIL\n");
 							sprintf(flickTestResult, "FAIL");
 							everFail = 1;
 						}

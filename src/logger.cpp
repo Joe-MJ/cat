@@ -104,13 +104,16 @@ void logFormat(const char* level, const char* message, va_list args)
 	{
 		if(gMode & LOG_MODE_CONSOLE)
 		{
-			fprintf(ftmp, "%d-%02d-%02d %02d:%02d:%02d - %s - %s -", (1900+ltm->tm_year), ltm->tm_mon, ltm->tm_mday, ltm->tm_hour, ltm->tm_min, ltm->tm_sec, gLogName, level);  
+			fprintf(ftmp, "%d-%02d-%02d %02d:%02d:%02d - %s - %s -", (1900+ltm->tm_year), (1+ltm->tm_mon), ltm->tm_mday, ltm->tm_hour, ltm->tm_min, ltm->tm_sec, gLogName, level);  
 			vfprintf(ftmp, message, args);
 		}
 		if(gMode & LOG_MODE_FILE)
 		{
-			fprintf(gFp, "%d-%02d-%02d %02d:%02d:%02d - %s - %s -", (1900+ltm->tm_year), ltm->tm_mon, ltm->tm_mday, ltm->tm_hour, ltm->tm_min, ltm->tm_sec, gLogName, level);  
-			vfprintf(gFp, message, args);    
+			if(gFp)
+			{
+				fprintf(gFp, "%d-%02d-%02d %02d:%02d:%02d - %s - %s -", (1900+ltm->tm_year), (1+ltm->tm_mon), ltm->tm_mday, ltm->tm_hour, ltm->tm_min, ltm->tm_sec, gLogName, level);  
+				vfprintf(gFp, message, args);   
+			}
 		}
 	}
 }
