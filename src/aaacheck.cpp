@@ -231,7 +231,6 @@ static locateImage_t *locatePattern(muImage_t *in, int mode)
 		subYImg = muCreateImage(subSize, MU_IMG_DEPTH_8U, 1);
 		subRGBImg = muCreateImage(subSize, MU_IMG_DEPTH_8U, 3);
 		gravity = muFindGravityCenter(otsuImage);
-		logInfo("gx= %d, gy=%d \n", gravity.x, gravity.y);
 		cropRect.width = CROP_W;
 		cropRect.height = CROP_H;
 		cropRect.x = gravity.x-(CROP_W/2);
@@ -268,13 +267,13 @@ static locateImage_t *locatePattern(muImage_t *in, int mode)
 		muErode55(diImg, eroImg);
 
 		//memset(gBuf, 0, sizeof(char)*TEMP_LEN);
-		//sprintf(gBuf, "k99-h-dia_%d_%dx%d.yuv", count, eroImg->width, eroImg->height);
+		//sprintf(gBuf, "bianco-dia_%dx%d.yuv", eroImg->width, eroImg->height);
 		//saveYImg(gBuf, eroImg);
 		mu4ConnectedComponent8u(eroImg, labImg, &numLabel);
 		if(numLabel > 1)
 		{
 			muSeq_t *seq = NULL;
-			muSeqBlock_t *current;
+			muSeqBlock_t *current = NULL;
 			muBoundingBox_t *bp;
 			muDoubleThreshold_t th;
 			muPoint_t rpMin, rpMax;
@@ -282,7 +281,8 @@ static locateImage_t *locatePattern(muImage_t *in, int mode)
 			th.min = ((VIDEO_WIDTH/4)*5);
 			th.max = 0x3FFFFFFF;
 			seq = muFindBoundingBox(labImg, numLabel, th);
-			current = seq->first;
+			if(seq)
+				current = seq->first;
 			while(current != NULL)
 			{
 				bp = (muBoundingBox_t *) current->data;
@@ -297,16 +297,25 @@ static locateImage_t *locatePattern(muImage_t *in, int mode)
 				current = current->next;
 			}
 			if(seq)
+			{
 				muClearSeq(&seq);
+			}
+			else
+			{
+				logError("cannot find the test chart, using the predefine x,y,w,h!!\n");
+				w = scaleImg->width/4;
+				h = scaleImg->height/4;
+				x = scaleImg->width/4;
+				y = scaleImg->height/4;
+			}
 		}
 		else
 		{
-			w = 2; h = 1;
-			
-			memset(gBuf, 0, sizeof(char)*TEMP_LEN);
-			sprintf(gBuf, "QQero_%dx%d.yuv", yImg->width, yImg->height);
-			saveYImg(gBuf, yImg);
-			logError("locate Image error!!\n");
+			logError("cannot find the test chart, using the predefine x,y,w,h!!\n");
+			w = scaleImg->width/4;
+			h = scaleImg->height/4;
+			x = scaleImg->width/4;
+			y = scaleImg->height/4;
 		}
 
 		cropRect.x = x << 2; cropRect.y = y << 2;
@@ -611,15 +620,11 @@ static muImage_t *getROI(muImage_t *yImg, muImage_t *rgbImg, muImage_t *bkImg)
 	muErode33(thImg, eroImg);
 	muDilate33(eroImg, diImg);
 
-	printf("%d  %d\n", diImg->width, diImg->height);
-	saveYImg("123.yuv", diImg);
-
-
 	mu4ConnectedComponent8u(diImg, labImg, &numLabel);
 	if(numLabel > 1)
 	{
 		muSeq_t *seq = NULL;
-		muSeqBlock_t *current;
+		muSeqBlock_t *current = NULL;
 		muBoundingBox_t *bp;
 		muDoubleThreshold_t th;
 		muPoint_t rpMin, rpMax;
@@ -628,7 +633,9 @@ static muImage_t *getROI(muImage_t *yImg, muImage_t *rgbImg, muImage_t *bkImg)
 		th.min = 0;
 		th.max = 0x3FFFFFFF;
 		seq = muFindBoundingBox(labImg, numLabel, th);
-		current = seq->first;
+		if(seq)
+			current = seq->first;
+		
 		while(current != NULL)
 		{
 			bp = (muBoundingBox_t *) current->data;

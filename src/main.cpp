@@ -126,11 +126,12 @@ int _tmain(int argc, TCHAR** argv)
 	char *absPath;
 	int idx;
 
-	/* -- for debugging
+	// -- for debugging
+	/*
 	argc = 3;
 	argv[0] = "cat";
 	argv[1] = "--video";
-	argv[2] = "D:\\Project\\Windows\\cat\\Debug\\FalseAlarm\\Bianco-Camera_414_07_21_00_31_14.mp4";
+	argv[2] = "D:\\Project\\Windows\\cat\\Debug\\FalseAlarm\\Bianco-camera067.mp4";
 	*/
 
 	if(argc < 2)
@@ -320,7 +321,6 @@ int _tmain(int argc, TCHAR** argv)
 	}
 	logInfo("log Finish\n");
 	logExit();
-	system("pause");
 	return 0;
 }
 
