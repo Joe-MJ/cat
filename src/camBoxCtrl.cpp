@@ -6,6 +6,7 @@ static u8 gReadBuf[READ_DATA_LEN];
 static Serial* gSp = NULL;
 //time out unit: second
 static u8 timeOutTbl[14] = {0, 120, 10, 10, 10, 10, 3, 13, 5, 3, 3, 120, 3, 0}; 
+static int gCtlFlag = 0;
 
 
 
@@ -521,9 +522,15 @@ static colorSensorInfo_t calCTLux(camBoxInfo_t *cbInfo)
 	sy = y/(x+y+z);
 
 	//mccammy formular
-	n = (sx - 0.332)/(0.1858 - sy);
-
-	cbInfo->ct = (449)*(n*n*n)+(3525)*(n*n)+(6823.3)*(n)+5520.33;
+	if(x==0 && y==0 && z==0)
+	{
+		cbInfo->ct = 0;
+	}
+	else
+	{
+		n = (sx - 0.332)/(0.1858 - sy);
+		cbInfo->ct = (449)*(n*n*n)+(3525)*(n*n)+(6823.3)*(n)+5520.33;
+	}
 
 	logInfo("AVG: [R]:%.0f [G]:%.0f [B]:%.0f [I]:%.0f\n",r, g, b, in);
 	logInfo("AVG: [X]:%f [Y]:%f [Z]:%f [LUX]:%f, [CT]:%f\n",x, y, z, cbInfo->lux, cbInfo->ct);
@@ -542,7 +549,10 @@ colorSensorInfo_t colorSensor(catArg_t catArg, const char *comPort)
 	colorSensorInfo_t sensorInfo;
 	camBoxInfo_t sumCamBoxInfo = {0};
 	logInfo("sense color spetrum\n");
-	camBoxCtrl(FLAG_CAMBOX_GET_DISTANCE, catArg, comPort, specFlag);
+	
+	if(!gCtlFlag)
+		camBoxCtrl(FLAG_CAMBOX_GET_DISTANCE, catArg, comPort, specFlag);
+
 	for(int i=0; i<times; i++)
 	{
 		// get R
@@ -627,6 +637,8 @@ void ctlEnv(catArg_t catArg, const char *comPort)
 	catArg.setG = lightArg.g;
 	catArg.setB = lightArg.b;
 	catArg.setW = lightArg.w;
+	gCtlFlag = 1;
+	gCamBoxInfo.getDistance = lightArg.distance;
 #if defined(__RGBLED__)
 	camBoxCtrl(FLAG_CAMBOX_SET_RGB, catArg, comPort, specFlag);
 #elif defined(__RGBWLED__)
@@ -653,7 +665,6 @@ void ctlEnv(catArg_t catArg, const char *comPort)
 	// move chart 
 	catArg.distance = lightArg.distance;
 	camBoxCtrl(FLAG_CAMBOX_CD, catArg, comPort, specFlag);
-	gCamBoxInfo.getDistance = lightArg.distance;
 	
 	//lightArg.ct // target
 	if(lightArg.ct >= gColorSensorInfo.ct)

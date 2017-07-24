@@ -45,7 +45,7 @@
 #define TEMP_LEN		128
 #define SEND_DATA_LEN	8
 #define READ_DATA_LEN	8
-#define NUM_LIGHT_SOURCE	13
+#define NUM_LIGHT_SOURCE	47
 
 // -----------------------------------------------
 // Genreic Type Definition
@@ -82,7 +82,6 @@ typedef struct _catArg
 typedef struct _ctlArg
 {
 	u8 r,g,b,w;	 // Pre-define RGBW value;
-	int x,y,z,i; // Cl-200 target XYZ & Target Intensity
 	int ct;
 	int lux;
 	int distance;
