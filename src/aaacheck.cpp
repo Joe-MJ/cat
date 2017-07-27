@@ -30,6 +30,7 @@ u8 chipName[] = {35,37,53,70,95,52,57,97,55,50,99};// this is old debugParser su
 //for debug;
 char gBuf[TEMP_LEN];
 FILE *gFp = NULL;
+static colorSensorInfo_t  gColorSensorInfo;
 
 typedef struct _labInfo
 {
@@ -62,6 +63,24 @@ typedef struct _previewScene
 	int totalFrame;
 	int totalSecond;
 }previewScene_t;
+
+static colorSensorInfo_t getCamBoxInfo()
+{
+	FILE *log = NULL;
+	colorSensorInfo_t sensorInfo;
+	log = fopen(CAMBOX_ENV_FILE, "rb");
+	if(log)
+	{
+		fscanf(log, "%lf", &sensorInfo.ct);
+		fscanf(log, "%lf", &sensorInfo.lux);
+		fscanf(log, "%d", &sensorInfo.distance);
+		fclose(log);
+	}
+
+	//printf("%.2f %.2f %d\n", sensorInfo.ct, sensorInfo.lux, sensorInfo.distance);
+
+	return sensorInfo;
+}
 
 
 static int saveYImg(char *name, muImage_t *yImg)
@@ -433,6 +452,8 @@ int aaacheckImage(catArg_t arg)
 	}
 
 	//record csv init
+	//get camBox last info.
+	gColorSensorInfo = getCamBoxInfo();
 	report = resultReport(gAbsPath);
 	genInitFolder(gAbsPath);
 	nSize = getNewResolution(size);
@@ -485,13 +506,12 @@ int aaacheckImage(catArg_t arg)
 		sprintf(awbTestResult, "FAIL");
 	}
 
-	fprintf(report, "%s,NA,%f,%f,%f,%s,%s,%s,NA\n", arg.imageName, bm, info.hisSD, hsv.avgS, afTestResult, aeTestResult, awbTestResult);
-	logInfo("%s: bm:%f std:%f s:%f\n", arg.imageName, bm, info.hisSD, hsv.avgS);
+	fprintf(report, "%s,NA,%f,%f,%f,%s,%s,%s,NA,NA,%.2f,%.2f,%d\n", arg.imageName, bm, info.hisSD, hsv.avgS, afTestResult, aeTestResult, awbTestResult,gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+	logInfo("%s: bm:%f std:%f s:%f CT:%.2f LUX:%.2f Distance:%d\n", arg.imageName, bm, info.hisSD, hsv.avgS, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 
 	if(fail)
 		copyFile(arg.imageName, gFailPath);
 	
-
 	removeFile(tempBuf);
 	if(inImage)
 		muReleaseImage(&inImage);
@@ -750,7 +770,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	int len, startFrameFlag = 0;
 	char buf[TEMP_LEN];
 	char videoTemp[TEMP_LEN];
-	char aeTestResult[16], awbTestResult[16], afTestResult[16], flickTestResult[16];
+	char aeTestResult[16], awbTestResult[16], afTestResult[16], flickTestResult[16], abnormalTestResult[16];
 	int firstFlag, motionFlag = 0, patternFlag = 0;
 	char *tempName;
 	FILE *fp, *img, *fw, *report;
@@ -787,6 +807,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	tempName = getRealFileName(videoName, ".mp4");
 	fullFrameSize = (size.width * size.height) * 1.5;
 	fp = fopen(rawFile, "rb");
+	gColorSensorInfo = getCamBoxInfo();
 	report = resultReport(gAbsPath);
 	genInitFolder(gAbsPath);
 	while(1)
@@ -1002,6 +1023,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 			memset(afTestResult, 0, sizeof(char)*16);
 			memset(awbTestResult, 0, sizeof(char)*16);
 			memset(flickTestResult, 0, sizeof(char)*16);
+			memset(abnormalTestResult,0, sizeof(char)*16);
 			fail = 0;
 			fread(rawImg->imagedata, 1, fullFrameSize, fp);
 			memcpy(yImg->imagedata, rawImg->imagedata, yImg->width*yImg->height*sizeof(MU_8U));
@@ -1015,10 +1037,12 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					sprintf(afTestResult, "FAIL");
 					sprintf(awbTestResult, "FAIL");
 					sprintf(aeTestResult, "FAIL");
+					sprintf(abnormalTestResult, "FAIL");
 					logError("AWB:FAIL\n");
 					logError("AF:FAIL\n");
 					logError("AE:FAIL\n");
-					fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult);
+					logError("Abnormal:FAIL\n");
+					fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 					everFail = 1;
 				}
 				frameCount++;
@@ -1039,7 +1063,8 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 						sprintf(afTestResult, "NA");
 						sprintf(awbTestResult, "PASS");
 						sprintf(aeTestResult, "PASS");
-						sprintf(flickTestResult, "PASS");
+						sprintf(flickTestResult, "NA");
+						sprintf(abnormalTestResult, "NA");
 						logInfo("AWB:%f\n", result.s);
 						if(result.s > AWB_TH_1)
 						{
@@ -1056,7 +1081,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 							logInfo("%s\n", buf);
 							muSaveBMP(buf, rgbImg);
 						}
-						fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s,NA\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult);
+						fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 					
 						//flicker check
 						deCount = 0;
@@ -1095,6 +1120,8 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 						sprintf(aeTestResult, "PASS");
 						sprintf(afTestResult, "PASS");
 						sprintf(awbTestResult, "PASS");
+						sprintf(flickTestResult, "NA");
+						sprintf(abnormalTestResult,"NA");
 						result.bm = resultSum.bm/(double)count;
 						result.s = resultSum.s/(double)count;
 						result.y = resultSum.y/(double)count;
@@ -1125,7 +1152,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 							everFail = 1;
 						}
 
-						fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult);
+						fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 					}
 				}
 
@@ -1138,6 +1165,8 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 				sprintf(afTestResult, "NA");
 				sprintf(awbTestResult, "PASS");
 				sprintf(aeTestResult, "NA");
+				sprintf(flickTestResult, "NA");
+				sprintf(abnormalTestResult, "NA");
 				result = video3aCheck(cCropImg, (frameCount+1), AWB_CHECK);
 				logInfo("first frame AWB:%f\n", result.s);
 				if(result.s > AWB_TH_1)
@@ -1156,7 +1185,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					everFail = 1;
 				}
 
-				fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s,NA\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult);
+				fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 			}
 
 			startFlag = 1;

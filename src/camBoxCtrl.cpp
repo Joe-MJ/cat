@@ -390,6 +390,15 @@ static void processCmd(int cmdFlag, catArg_t arg, const char *comPort)
 		if(cmdFlag == FLAG_CAMBOX_SET_RGBW)
 		{
 			gColorSensorInfo = colorSensor(arg, comPort);
+			printf("%d %f %f\n", gColorSensorInfo.distance, gColorSensorInfo.ct, gColorSensorInfo.lux);
+			// write the env to the log.
+			FILE *log = NULL;
+			log = fopen(CAMBOX_ENV_FILE, "wb");
+			if(log)
+			{
+				fprintf(log,"%.2f %.2f %d", gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+				fclose(log);
+			}
 		}
 	}
 	else
@@ -577,6 +586,7 @@ colorSensorInfo_t colorSensor(catArg_t catArg, const char *comPort)
 	//cal CT & Lux
 	gCamBoxInfo.wct = catArg.wct;
 	sensorInfo = calCTLux(&gCamBoxInfo);
+	sensorInfo.distance = gCamBoxInfo.getDistance;
 	return sensorInfo;
 }
 

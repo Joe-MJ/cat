@@ -14,6 +14,7 @@
 #include "muGadget.h"
 
 #define CAT_VERSION	"0.0.1"
+#define CAMBOX_ENV_FILE	".camBoxEnv.cbe"
 #define DEBUG						0
 #define DEBUG_OUTPUT				0
 #define DEBUG_OUTPUT_PREVIEW_BMP	0
@@ -93,7 +94,7 @@ typedef struct _colorSensorInfo
 	int r,g,b,i;
 	double x,y,z;
 	double ct, lux;
-
+	int distance;
 }colorSensorInfo_t;
 
 
