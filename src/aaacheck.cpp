@@ -68,6 +68,7 @@ static colorSensorInfo_t getCamBoxInfo()
 {
 	FILE *log = NULL;
 	colorSensorInfo_t sensorInfo;
+	memset(&sensorInfo, 0, sizeof(colorSensorInfo_t));
 	log = fopen(CAMBOX_ENV_FILE, "rb");
 	if(log)
 	{
@@ -616,7 +617,7 @@ static int motionDetection(muImage_t *preImg, muImage_t *curImg, int th)
 
 typedef struct _videoResult
 {
-	MU_64F bm, y, s;
+	MU_64F bm, y, s, avgY;
 }videoResult_t;
 
 static muImage_t *getROI(muImage_t *yImg, muImage_t *rgbImg, muImage_t *bkImg)
@@ -686,14 +687,12 @@ static muImage_t *getROI(muImage_t *yImg, muImage_t *rgbImg, muImage_t *bkImg)
 			if(avgHsv.avgV < BLACK_TH && avgHsv.avgS < BLACK_TH)
 			{
 				logInfo("black/abnormal scene detect!\n");
-				muSaveBMP("debug_ab_bk_hsvChk_scene.bmp",rgbImg);
 				cropImg = NULL;
 			}
 		}
 		else
 		{
 			logInfo("black/abnormal scene detect!\n");
-			muSaveBMP("debug_ab_bk_scene.bmp",rgbImg);
 			cropImg = NULL;
 		}
 
@@ -742,7 +741,7 @@ static videoResult_t video3aCheck(muImage_t *cropImg, int frameCount, int mode)
 	if(mode & AWB_CHECK)
 		hsv = awbCheck(locateImg->subRGBImg);
 
-	result.bm = bm; result.s = hsv.avgS; result.y = info.hisSD;
+	result.bm = bm; result.s = hsv.avgS; result.y = info.hisSD; result.avgY = info.avgY;
 
 	if(locateImg->subRGBImg)
 		muReleaseImage(&locateImg->subRGBImg);
@@ -804,6 +803,8 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	cMdImg = muCreateImage(muSize(roi.width, roi.height), MU_IMG_DEPTH_8U, 1);
 	pMdImg = muCreateImage(muSize(roi.width, roi.height), MU_IMG_DEPTH_8U, 1);
 	memset(buf, 0, sizeof(char)*TEMP_LEN);
+	memset(&result,0,sizeof(videoResult_t));
+	memset(&resultSum,0,sizeof(videoResult_t));
 	tempName = getRealFileName(videoName, ".mp4");
 	fullFrameSize = (size.width * size.height) * 1.5;
 	fp = fopen(rawFile, "rb");
@@ -859,6 +860,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 			muImage_t *subImg, *labImg;
 			MU_16U *iBuf;
 			MU_8U numLabel;
+			int overlapCount;
 			int i,j;
 			muYUV420toRGB(rawImg, rgbImg);
 			hsvImg = muCreateImage(size, MU_IMG_DEPTH_16U, 3);
@@ -877,57 +879,94 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 				if((iBuf[i+2] >= 90) && (iBuf[i+1] <= 2))
 					isImg->imagedata[j] = 255;
 			}
+		
 			muErode33(isImg, eroImg);
 			muDilate33(eroImg, diImg);
 			subImg = muCreateImage(muSize(roi.width, roi.height), MU_IMG_DEPTH_8U, 1);
 			muGetSubImage(diImg, subImg, roi);
+
 			labImg = muCreateImage(muSize(roi.width, roi.height), MU_IMG_DEPTH_8U, 1);
 			mu4ConnectedComponent8u(subImg, labImg, &numLabel);
 			//maybe need to add more robust analysis label for criteria. 6+1=7 
-			if(numLabel == 7)
+			if(numLabel >= 7)
 			{
 				muSeq_t *seq;
-				muSeqBlock_t *current;
-				muBoundingBox_t *bp;
+				muSeqBlock_t *current, *current1;
+				muBoundingBox_t *bp, *bp1, *bp2;
 				muDoubleThreshold_t th;
 				int minx = 0x3FFFFFFF, miny=0x3FFFFFFF;
 				int maxx = 0, maxy = 0;
 				th.min = 0;
 				th.max = 0x3FFFFFFF;
 				seq = muFindBoundingBox(labImg, numLabel, th);
-				current = seq->first;
-				while(current != NULL)
+				overlapCount = 0;
+				if(numLabel != 7)
 				{
-					bp = (muBoundingBox_t *) current->data;
-					if(bp->minx < minx)
-						minx = bp->minx;
-					if(bp->miny < miny)
-						miny = bp->miny;
-					if(bp->maxx > maxx)
-						maxx = bp->maxx;
-					if(bp->maxy > maxy)
-						maxy = bp->maxy;
-					current = current->next;
-				}
-				muClearSeq(&seq);
-
-				//find miny minx maxx maxy reconsturct the real position
-				rpMin.x = minx+(size.width/3); rpMin.y = miny + ((size.height/4)*3);
-				rpMax.x = maxx+(size.width/3); rpMax.y = maxy + ((size.height/4)*3);
-				//logInfo("[%d] preview frame detection minx:%d miny:%d maxx:%d maxy:%d\n", (frameCount+1),rpMin.x, rpMin.y, rpMax.x, rpMax.y);
+					// process the specific pattern
+					current =  seq->first;
+					while(current != NULL)
+					{
+						MU_32S overlapSize;
+						bp1 = (muBoundingBox_t *) current->data;
 				
-				if(patternFlag == 0)
-				{
-					logInfo("preview first frame detection! frameCount:%d\n", (frameCount+1));
-					psData.startFrameCount = frameCount;
-					startFrameFlag = 1;
+						current1 = seq->first;
+						while(current1 != NULL)
+						{
+							bp2 = (muBoundingBox_t *) current1->data;
+							muFindOverlapSize(bp1, bp2, &overlapSize);
+							if(bp1->minx != bp2->minx &&  bp1->maxx != bp2->maxx && 
+								bp1->miny != bp2->miny && bp1->maxy != bp2->maxy && overlapSize != 0)
+							{
+								logDebug("fc:%d bp1->area: %d  bp2->area: %d overlapSize = %d \n",frameCount, bp1->area, bp2->area, overlapSize);
+								overlapCount++;
+							}
+							current1 = current1->next;
+						}
+						current = current->next;
+					}
 				}
+				else
+				{
+					current = seq->first;
+					while(current != NULL)
+					{
+						bp = (muBoundingBox_t *) current->data;
+						if(bp->minx < minx)
+							minx = bp->minx;
+						if(bp->miny < miny)
+							miny = bp->miny;
+						if(bp->maxx > maxx)
+							maxx = bp->maxx;
+						if(bp->maxy > maxy)
+							maxy = bp->maxy;
+						current = current->next;
+					}
+					
+					//find miny minx maxx maxy reconsturct the real position
+					rpMin.x = minx+(size.width/3); rpMin.y = miny + ((size.height/4)*3);
+					rpMax.x = maxx+(size.width/3); rpMax.y = maxy + ((size.height/4)*3);
+					//logInfo("[%d] preview frame detection minx:%d miny:%d maxx:%d maxy:%d\n", (frameCount+1),rpMin.x, rpMin.y, rpMax.x, rpMax.y);
+				}
+				if(seq)
+					muClearSeq(&seq);
+				
+				if(numLabel == 7 || overlapCount >= 4)
+				{
+
+					if(patternFlag == 0)
+					{
+						logInfo("preview first frame detection! frameCount:%d\n", (frameCount+1));
+						psData.startFrameCount = frameCount;
+						startFrameFlag = 1;
+					}
 #if DEBUG_OUTPUT_PREVIEW_BMP
 				muDrawRectangle(rgbImg, rpMin, rpMax, 'r');
 #endif
-				patternFlag = 1;		
+					patternFlag = 1;
+				}
 			}
-			else
+
+			if(numLabel != 7 && overlapCount < 4)
 			{
 				if(patternFlag == 1)
 				{
@@ -1034,15 +1073,13 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 				if((ppsData->endFrameCount-1) == frameCount)
 				{
 					logError("Last preview frame is dark or abnormal\n");
-					sprintf(afTestResult, "FAIL");
-					sprintf(awbTestResult, "FAIL");
-					sprintf(aeTestResult, "FAIL");
+					sprintf(afTestResult, "NA");
+					sprintf(awbTestResult, "NA");
+					sprintf(aeTestResult, "NA");
+					sprintf(flickTestResult, "NA");
 					sprintf(abnormalTestResult, "FAIL");
-					logError("AWB:FAIL\n");
-					logError("AF:FAIL\n");
-					logError("AE:FAIL\n");
 					logError("Abnormal:FAIL\n");
-					fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+					fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 					everFail = 1;
 				}
 				frameCount++;
@@ -1079,7 +1116,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 							memset(buf, 0, sizeof(char)*TEMP_LEN);
 							sprintf(buf, "%s\\%s_%d.bmp", gFailPath, tempRealName, (frameCount+1));
 							logInfo("%s\n", buf);
-							muSaveBMP(buf, rgbImg);
+							//muSaveBMP(buf, rgbImg);
 						}
 						fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 					
@@ -1113,7 +1150,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					resultSum.s += result.s;
 					resultSum.y += result.y;
 					count++;
-					logInfo("last frames AWB:%f  AE:%f  AF:%f fc:%d\n",result.s, result.y, result.bm, (frameCount+1));
+					logInfo("last frames AWB:%f  AE:%f:%f  AF:%f fc:%d\n",result.s, result.y, result.avgY, result.bm, (frameCount+1));
 					if(frameCount == (ppsData->endFrameCount - 1))
 					{
 						logInfo("last Preview Frame!\n");
@@ -1148,7 +1185,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 							memset(buf, 0, sizeof(char)*TEMP_LEN);
 							sprintf(buf, "%s\\%s_%d.bmp", gFailPath, tempRealName, (frameCount+1));
 							logInfo("%s\n", buf);
-							muSaveBMP(buf, rgbImg);
+							//muSaveBMP(buf, rgbImg);
 							everFail = 1;
 						}
 
@@ -1181,7 +1218,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					memset(buf, 0, sizeof(char)*TEMP_LEN);
 					sprintf(buf, "%s\\%s_%d.bmp", gFailPath, tempRealName, (frameCount+1));
 					logInfo("%s\n", buf);
-					muSaveBMP(buf, rgbImg);
+					//muSaveBMP(buf, rgbImg);
 					everFail = 1;
 				}
 
