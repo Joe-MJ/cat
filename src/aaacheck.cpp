@@ -1,21 +1,23 @@
 #include "cat.h"
 
 
-#define CROP_W		180
-#define CROP_H		250
-#define	VIDEO_WIDTH	480
-#define BM_ROI_W    150
-#define BM_ROI_H	50	
-#define OF_X		3
-#define OF_Y		3
-#define AWB_TH_1	15.0
-#define AWB_TH_2	12.0
-#define AE_TH		40.0
-#define AF_TH		2.1
-#define BLACK_TH	15
-#define FLICK_TH	30
-#define FRAMERATE	15
-#define LAST_FRAME	5
+#define CROP_W					180
+#define CROP_H					250
+#define	VIDEO_WIDTH				480
+#define BM_ROI_W				150
+#define BM_ROI_H				50	
+#define OF_X					3
+#define OF_Y					3
+#define AWB_TH_1				15.0
+#define AWB_TH_2				12.0
+#define AE_TH					40.0
+#define AF_TH					2.1
+#define BLACK_TH				15
+#define FLICK_TH				30
+#define BRIGHTNESS_DARK			100
+#define BRIGHTNESS_BRIGHT		150
+#define FRAMERATE				15
+#define LAST_FRAME				5
 
 enum
 {
@@ -770,6 +772,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	char buf[TEMP_LEN];
 	char videoTemp[TEMP_LEN];
 	char aeTestResult[16], awbTestResult[16], afTestResult[16], flickTestResult[16], abnormalTestResult[16];
+	char brightnessResult[16];
 	int firstFlag, motionFlag = 0, patternFlag = 0;
 	char *tempName;
 	FILE *fp, *img, *fw, *report;
@@ -1063,6 +1066,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 			memset(awbTestResult, 0, sizeof(char)*16);
 			memset(flickTestResult, 0, sizeof(char)*16);
 			memset(abnormalTestResult,0, sizeof(char)*16);
+			memset(brightnessResult, 0, sizeof(char)*16);
 			fail = 0;
 			fread(rawImg->imagedata, 1, fullFrameSize, fp);
 			memcpy(yImg->imagedata, rawImg->imagedata, yImg->width*yImg->height*sizeof(MU_8U));
@@ -1077,9 +1081,10 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					sprintf(awbTestResult, "NA");
 					sprintf(aeTestResult, "NA");
 					sprintf(flickTestResult, "NA");
+					sprintf(brightnessResult, "NA");
 					sprintf(abnormalTestResult, "FAIL");
 					logError("Abnormal:FAIL\n");
-					fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+					fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, brightnessResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 					everFail = 1;
 				}
 				frameCount++;
@@ -1096,19 +1101,41 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					if(deltaE > 2)
 					{
 						logInfo("deltaE = %f  fc = %d\n", deltaE, (frameCount+1));
-						result = video3aCheck(cCropImg, (frameCount+1), AWB_CHECK);
+						result = video3aCheck(cCropImg, (frameCount+1), AWB_CHECK|AE_CHECK);
 						sprintf(afTestResult, "NA");
 						sprintf(awbTestResult, "PASS");
 						sprintf(aeTestResult, "PASS");
 						sprintf(flickTestResult, "NA");
+						sprintf(brightnessResult, "Medium");
 						sprintf(abnormalTestResult, "NA");
-						logInfo("AWB:%f\n", result.s);
+						logInfo("AWB:%f AE:%f AvgY:%f\n", result.s, result.y, result.avgY);
 						if(result.s > AWB_TH_1)
 						{
 							fail = 1;
 							sprintf(awbTestResult, "FAIL");
 							logError("AWB:FAIL\n");
 							everFail = 1;
+						}
+
+						if(result.y < AE_TH)
+						{
+							fail = 1;
+							sprintf(aeTestResult, "FAIL");
+							logError("AE:FAIL\n");
+							everFail = 1;
+						}
+
+						if(result.avgY < BRIGHTNESS_DARK)
+						{
+							memset(brightnessResult, 0, sizeof(char)*16);
+							sprintf(brightnessResult, "Dark");
+							logError("Brightness:Dark\n");
+						}
+						if(result.avgY > BRIGHTNESS_BRIGHT)
+						{
+							memset(brightnessResult, 0, sizeof(char)*16);
+							sprintf(brightnessResult, "Bright");
+							logError("Brightness:Bright\n");
 						}
 
 						if(fail)
@@ -1118,7 +1145,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 							logInfo("%s\n", buf);
 							//muSaveBMP(buf, rgbImg);
 						}
-						fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+						fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, brightnessResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 					
 						//flicker check
 						deCount = 0;
@@ -1150,7 +1177,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					resultSum.s += result.s;
 					resultSum.y += result.y;
 					count++;
-					logInfo("last frames AWB:%f  AE:%f:%f  AF:%f fc:%d\n",result.s, result.y, result.avgY, result.bm, (frameCount+1));
+					logInfo("last frames AWB:%f  AE:%f: Brightness:%f  AF:%f fc:%d\n",result.s, result.y, result.avgY, result.bm, (frameCount+1));
 					if(frameCount == (ppsData->endFrameCount - 1))
 					{
 						logInfo("last Preview Frame!\n");
@@ -1158,6 +1185,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 						sprintf(afTestResult, "PASS");
 						sprintf(awbTestResult, "PASS");
 						sprintf(flickTestResult, "NA");
+						sprintf(brightnessResult, "Medium");
 						sprintf(abnormalTestResult,"NA");
 						result.bm = resultSum.bm/(double)count;
 						result.s = resultSum.s/(double)count;
@@ -1180,6 +1208,20 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 							logError("AE:FAIL\n");
 							sprintf(aeTestResult, "FAIL");
 						}
+
+						if(result.avgY < BRIGHTNESS_DARK)
+						{
+							memset(brightnessResult, 0, sizeof(char)*16);
+							sprintf(brightnessResult, "Dark");
+							logError("Brightness:Dark\n");
+						}
+						if(result.avgY > BRIGHTNESS_BRIGHT)
+						{
+							memset(brightnessResult, 0, sizeof(char)*16);
+							sprintf(brightnessResult, "Bright");
+							logError("Brightness:Bright\n");
+						}
+
 						if(fail)
 						{
 							memset(buf, 0, sizeof(char)*TEMP_LEN);
@@ -1189,7 +1231,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 							everFail = 1;
 						}
 
-						fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+						fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, brightnessResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 					}
 				}
 
@@ -1203,8 +1245,9 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 				sprintf(awbTestResult, "PASS");
 				sprintf(aeTestResult, "NA");
 				sprintf(flickTestResult, "NA");
+				sprintf(brightnessResult, "Medium");
 				sprintf(abnormalTestResult, "NA");
-				result = video3aCheck(cCropImg, (frameCount+1), AWB_CHECK);
+				result = video3aCheck(cCropImg, (frameCount+1), AWB_CHECK|AE_CHECK);
 				logInfo("first frame AWB:%f\n", result.s);
 				if(result.s > AWB_TH_1)
 				{
@@ -1212,7 +1255,21 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					logError("AWB:FAIL\n");
 					sprintf(awbTestResult, "FAIL");
 				}
-				
+
+				if(result.avgY < BRIGHTNESS_DARK)
+				{
+					memset(brightnessResult, 0, sizeof(char)*16);
+					sprintf(brightnessResult, "Dark");
+					logError("Brightness:Dark\n");
+				}
+
+				if(result.avgY > BRIGHTNESS_BRIGHT)
+				{
+					memset(brightnessResult, 0, sizeof(char)*16);
+					sprintf(brightnessResult, "Bright");
+					logError("Brightness:Bright\n");
+				}
+
 				if(fail)
 				{
 					memset(buf, 0, sizeof(char)*TEMP_LEN);
@@ -1222,7 +1279,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					everFail = 1;
 				}
 
-				fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+				fprintf(report, "%s,%d,%f,%f,%f,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, brightnessResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 			}
 
 			startFlag = 1;

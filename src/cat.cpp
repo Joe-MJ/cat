@@ -115,7 +115,7 @@ FILE *resultReport(char *path)
 			logError("report file open failed\n");
 			exit(0);
 		}
-		fprintf(fp, "Test File, Frame Num., BM, Y, S, AF, AE, AWB, Flick, Abnormal, CT, LUX, Distance(mm)\n");
+		fprintf(fp, "Test File, Frame Num., BM, Y, S, AF, AE, AWB, Flick, Brightness, Abnormal, CT, LUX, Distance(mm)\n");
 	}
 	else
 	{
