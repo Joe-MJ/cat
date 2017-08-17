@@ -413,7 +413,8 @@ int aaacheckImage(catArg_t arg)
 	char buf[MAX_LEN];
 	char tempBuf[TEMP_LEN];
 	char *tempName;
-	char aeTestResult[16], awbTestResult[16], afTestResult[16];
+	char aeTestResult[16], awbTestResult[16], afTestResult[16], flickTestResult[16];
+	char brightnessResult[16], abnormalTestResult[16];
 	muImage_t *inImage;
 	muSize_t size, nSize;
 	locateImage_t *locateImg;
@@ -444,6 +445,9 @@ int aaacheckImage(catArg_t arg)
 	memset(aeTestResult, 0, sizeof(char)*16);
 	memset(afTestResult, 0, sizeof(char)*16);
 	memset(awbTestResult, 0, sizeof(char)*16);
+	memset(flickTestResult, 0, sizeof(char)*16);
+	memset(brightnessResult, 0, sizeof(char)*16);
+	memset(abnormalTestResult, 0, sizeof(char)*16);
 	memset(buf, 0, sizeof(char)*MAX_LEN);
 	sprintf(buf, "%s.\\prebuilt\\identify.exe %s 2>&1", gAbsPath, arg.imageName);
 	size = getResolution(buf);
@@ -484,6 +488,10 @@ int aaacheckImage(catArg_t arg)
 	sprintf(awbTestResult, "PASS");
 	sprintf(aeTestResult, "PASS");
 	sprintf(afTestResult, "PASS");
+	sprintf(flickTestResult, "NA");
+	sprintf(brightnessResult, "Medium");
+	sprintf(abnormalTestResult, "NA");
+
 
 	bm = afCheck(locateImg->subYImg, IMAGE_MODE, 1);
 	if(bm > AF_TH)
@@ -501,6 +509,19 @@ int aaacheckImage(catArg_t arg)
 		sprintf(aeTestResult, "FAIL");
 	}
 
+	if(info.avgY < BRIGHTNESS_DARK)
+	{
+		memset(brightnessResult, 0, sizeof(char)*16);
+		sprintf(brightnessResult, "Dark");
+		logError("Brightness:Dark\n");
+	}
+	if(info.avgY > BRIGHTNESS_BRIGHT)
+	{
+		memset(brightnessResult, 0, sizeof(char)*16);
+		sprintf(brightnessResult, "Bright");
+		logError("Brightness:Bright\n");
+	}
+
 	hsv = awbCheck(locateImg->subRGBImg);
 	if(hsv.avgS > AWB_TH_2)
 	{
@@ -509,7 +530,10 @@ int aaacheckImage(catArg_t arg)
 		sprintf(awbTestResult, "FAIL");
 	}
 
-	fprintf(report, "%s,NA,%f,%f,%f,%s,%s,%s,NA,NA,%.2f,%.2f,%d\n", arg.imageName, bm, info.hisSD, hsv.avgS, afTestResult, aeTestResult, awbTestResult,gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+	
+
+
+	fprintf(report, "%s,NA,%f,%f,%f,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", arg.imageName, bm, info.hisSD, hsv.avgS, afTestResult, aeTestResult, awbTestResult, flickTestResult, brightnessResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 	logInfo("%s: bm:%f std:%f s:%f CT:%.2f LUX:%.2f Distance:%d\n", arg.imageName, bm, info.hisSD, hsv.avgS, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 
 	if(fail)

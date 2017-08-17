@@ -48,13 +48,14 @@ Serial::Serial(const char *portName)
         else
         {
             //Define serial connection parameters for the arduino board
-            dcbSerialParams.BaudRate=CBR_115200;
+            dcbSerialParams.BaudRate=CBR_9600;
             dcbSerialParams.ByteSize=8;
             dcbSerialParams.StopBits=ONESTOPBIT;
             dcbSerialParams.Parity=NOPARITY;
             //Setting the DTR to Control_Enable ensures that the Arduino is properly
             //reset upon establishing a connection
-            dcbSerialParams.fDtrControl = DTR_CONTROL_ENABLE;
+            dcbSerialParams.fDtrControl = DTR_CONTROL_DISABLE;
+			dcbSerialParams.fRtsControl = RTS_CONTROL_ENABLE;
 
              //Set the parameters and check for their proper application
              if(!SetCommState(hSerial, &dcbSerialParams))

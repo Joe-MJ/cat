@@ -15,7 +15,7 @@
 
 #define CAT_VERSION	"0.0.1"
 #define CAMBOX_ENV_FILE	".camBoxEnv.cbe"
-#define DEBUG						0
+#define DEBUG						1
 #define DEBUG_OUTPUT				0
 #define DEBUG_OUTPUT_PREVIEW_BMP	0
 #define DEBUG_OUTPUT_PREVIEW_YUV	0
