@@ -13,7 +13,7 @@
 #define AE_TH					40.0
 #define AF_TH					2.1
 #define BLACK_TH				15
-#define FLICK_TH				30
+#define FLICK_TH				5
 #define BRIGHTNESS_DARK			100
 #define BRIGHTNESS_BRIGHT		150
 #define FRAMERATE				15
@@ -28,7 +28,7 @@ enum
 // > kibo+ support new debugparser
 #define NUM_CHIP	13
 u8 chipName[] = {35,37,53,70,95,52,57,97,55,50,99};// this is old debugParser support.
-
+int gTestCount = 0;
 //for debug;
 char gBuf[TEMP_LEN];
 FILE *gFp = NULL;
@@ -65,6 +65,287 @@ typedef struct _previewScene
 	int totalFrame;
 	int totalSecond;
 }previewScene_t;
+
+typedef struct _Link{
+
+		struct _Link *add;
+		int data;
+}Link;
+
+typedef struct _GrayScale{
+		
+		Link *firstptr;
+		int count;
+}GrayScale;
+
+typedef struct _Otsuparameter{
+		
+		int WB;
+		int WO;
+		int MeanB;
+		int MeanO;
+}Otsuparameter;
+// has bug ... Joe 2017 06
+/* Test on 400MHZ SOC which cost 0.8s for D1 resolution */
+muError_t muOtsuThresholdingT(const muImage_t * src, muImage_t * dst)
+{
+	int idx = 0, jdx = 0;
+	int hidx = 0, widx = 0;
+	float BeVar = 0, TempVar = 0;
+	int FixedBeVar = 0, FixedTempVar = 0;
+	int Candidateflag = 0;// initially set the threshold = 0; 
+	short thidx = 0;
+	float tempdenominator = 0, tempdenominator2 = 0;
+	int outidx = 0, Idxnum = 0;
+	int ohidx = 0, owidx = 0;
+	int iheight;
+	int iwidth; 
+	int piwidth;
+	int totalsize;
+	int **InData;
+	int *In;
+	int *OutData;
+	int inidx = 0;
+	unsigned char *in, *out; 
+
+	GrayScale graynum[256] = {NULL, 0};
+
+	Link *temp[256] ={NULL, 0}, *current, *buffer;
+
+	Otsuparameter Thres[256] = {0, 0, 0, 0};
+	
+	muError_t ret;
+
+	ret = muCheckDepth(4, src, MU_IMG_DEPTH_8U, dst, MU_IMG_DEPTH_8U);
+	if(ret)
+	{
+		return ret;
+	}
+
+	if(src->channels != 1 || dst->channels != 1)
+	{
+		return MU_ERR_NOT_SUPPORT;
+	}
+
+	iwidth = src->width;
+
+	iheight = src->height;
+
+	in = src->imagedata;
+
+	out = dst->imagedata;
+
+	//piwidth = Image1->widthStep;
+
+	totalsize = ( iheight * iwidth );
+
+	/***memory allcoate of the input data***/
+
+	InData = (int **) malloc( (iheight) * sizeof(void *) );
+
+	In = (int *) malloc((iheight) * (iwidth) * sizeof(int ) );
+
+	for( inidx = 0; inidx < (iheight); inidx++, In += (iwidth) )
+		InData[ inidx ] = In;
+
+	/**************************************/
+
+	/***memory allcoate of the input data***/
+	
+	OutData = (int *) calloc( iheight * iwidth, sizeof(int) );
+
+	/**************************************/
+
+		/*!
+ ****************************************************************************************************************
+ * \brief
+ *    construt the Histogram parameter (Statistical number). 
+ *    
+ *    in: image data InData[height][width]          out: graynum[0].count: the total number of ro,
+ *                                                      graynum[1].count: the total number of r1,
+ *                                                                        .
+ *                                                                        .
+ *                                                                        .
+ *                                                      graynum[255].ocunt: the total number of r255
+ *                                                      and the graynum[num].firstptr is the first node 
+ *                                                      which could use the link visitation to search each positin
+ *                                                      of gray scale num.
+ *****************************************************************************************************************
+*/
+	for( idx = 0; idx < (iheight); idx++)
+	{
+		for(jdx = 0; jdx < (iwidth); jdx++)
+			InData[ idx ][ jdx ] = (int) in[ idx * (iwidth) + jdx ];
+	}
+
+	for(hidx = 0; hidx < (iheight); hidx++)//record the data and location of each pixel in whole image
+	{
+		for(widx = 0; widx < (iwidth); widx++)
+		{
+			graynum[ InData[hidx][widx] ].count += 1;
+
+			current = ( Link * ) malloc( sizeof(Link) );
+
+			current->data = ( hidx * (iwidth) ) + widx;
+
+			if( graynum[ InData[hidx][widx] ].firstptr == NULL )
+				graynum[ InData[hidx][widx] ].firstptr = current;
+
+			else
+				temp[ InData[hidx][widx] ]->add = current;
+			
+			current->add = NULL;
+
+			temp[ InData[hidx][widx] ] = current;
+				
+		}
+		
+	}
+
+	free(InData[0]);
+
+	free(InData);
+
+	/*!
+ ****************************************************************************************************************
+ * \brief
+ *    Find the threshold of the Otsu Algorithm.
+ *    
+ *    WB( T + 1) = WB( T ) + P( T + 1)    MeanB( T + 1 ) = [ MeanB( T ) WB( T ) + ( T + 1) P( T + 1) ] / WB( T + 1)
+ *
+ *    WO( T + 1) = WO( T ) + P( T + 1)    MeanO( T + 1 ) = [ MeanO( T ) WO( T ) + ( T + 1) P( T + 1) ] / WO( T + 1)
+ *
+ *    in: graynum[0].count                             out: Maximum between variance BeVar.
+ *        graynum[1].count                                             
+ *                .                                         The Cadidateflag = the chosen threshold.                
+ *                .                                                        
+ *                .                                                        
+ *        graynum[255].count                                                                                           
+ *****************************************************************************************************************
+*/
+	//set the initial value T = 0 of the otsu parameter.
+	
+	Thres[0].WB = graynum[0].count;
+
+	Thres[0].WO = totalsize - graynum[0].count;
+
+	Thres[0].MeanB = 0;
+
+	for( idx = 1; idx < 256; idx++)
+		Thres[0].MeanO +=( (graynum[idx].count) * idx );
+
+	 /*** avoid the denominator being 0. ***/
+
+	if( Thres[0].WB == 0)
+		tempdenominator = 0.0000000001;
+	else
+		tempdenominator = (float)Thres[0].WB;
+
+	if( Thres[0].WO == 0)
+		tempdenominator2 = 0.0000000001;
+	else
+		tempdenominator2 = (float)Thres[0].WO;
+
+	/***************************************/
+
+	BeVar = ( ( (float)Thres[0].WO / tempdenominator ) * Thres[0].MeanB * Thres[0].MeanB )// calculate and set the maximum between variance. 
+	    
+	    - (2 * (float)Thres[0].MeanB * Thres[0].MeanO)
+	         
+		+  ( ( (float)Thres[0].WB / tempdenominator2 ) * Thres[0].MeanO * Thres[0].MeanO);
+
+		for( thidx = 1; thidx < 256; thidx++)//perform in each threshold and find the correspoding threshold.
+	{
+		Thres[ thidx ].WB = Thres[ thidx -1 ].WB + graynum[ thidx ].count;
+
+		Thres[ thidx ].MeanB = Thres[ thidx-1 ].MeanB + ( thidx * graynum[ thidx ].count);
+
+		Thres[ thidx ].WO = Thres[ thidx -1 ].WO - graynum[ thidx ].count;
+
+		Thres[ thidx ].MeanO = Thres[ thidx-1 ].MeanO - ( thidx * graynum[ thidx ].count);
+
+		if( Thres[thidx].WB == 0)
+			tempdenominator = 0.0000000001;
+
+		else
+			tempdenominator = (float)Thres[thidx].WB;
+
+		if( Thres[thidx].WO == 0)
+			tempdenominator2 = 0.0000000001;
+
+		else
+			tempdenominator2 = (float)Thres[thidx].WO;
+
+		TempVar = ( ( (float)Thres[ thidx ].WO / tempdenominator ) * Thres[ thidx ].MeanB * Thres[ thidx ].MeanB ) 
+		    
+		    - (2 * (float)Thres[ thidx ].MeanB * Thres[ thidx ].MeanO)
+		         
+			+  ( ( (float)Thres[ thidx ].WB / tempdenominator2 ) * Thres[ thidx ].MeanO * Thres[ thidx ].MeanO);
+				
+		if( TempVar > BeVar)
+		{
+			BeVar = TempVar;
+
+			Candidateflag = thidx;
+		}
+	}//end loop for
+
+		
+	/*!
+ ****************************************************************************************************************
+ * \brief
+ *   Utilize the chosen threshold to get the binarization outputdata.
+ *    
+ *    in: Cadidateflag                out: binarition image.
+ *                                                      
+ *        graynum[0].firstptr                                                                
+ *                 .                                                       
+ *                 .                                                       
+ *                 .                                     
+ *        graynum[255].firstptr                                               
+ *                                                      
+ *                                                      
+ *****************************************************************************************************************
+*/
+
+	while( outidx < 256)
+	{
+		while(graynum[ outidx ].firstptr != NULL)
+		{
+			buffer =  graynum[outidx].firstptr;
+
+			Idxnum = graynum[outidx].firstptr->data;
+
+			ohidx = (int)(Idxnum /(double)iwidth);
+
+			owidx = (Idxnum % iwidth);
+		
+			if(outidx <= Candidateflag || (ohidx == 0) || (owidx == 0) || (ohidx == (iheight-1)) || (owidx == (iwidth-1)))
+				OutData[ohidx*iwidth+owidx ] = 0;
+			else
+				OutData[ohidx*iwidth+owidx ] = 255;
+
+			out[ ohidx * iwidth + owidx ] = (unsigned char)OutData[ ohidx * iwidth + owidx ];
+
+			graynum[outidx].firstptr = graynum[outidx].firstptr->add;
+
+			free( buffer );//release each node.
+		}
+				
+		++outidx;
+	}
+
+	free(OutData);
+
+	return MU_ERR_SUCCESS;
+
+
+}
+
+
+
+
+
 
 static colorSensorInfo_t getCamBoxInfo()
 {
@@ -223,6 +504,144 @@ static hsvData_t awbCheck(muImage_t *rgbImg)
 	return hsv;
 }
 
+
+static int locatePatternTemp(muImage_t *in)
+{
+	muImage_t *yImg, *edgeImg, *otsuImage;
+	muImage_t *subYImg, *subRGBImg;
+	muSize_t size,subSize;
+	FILE *img;
+	muRect_t cropRect;
+	muPoint_t gravity;
+	locateImage_t *locateImg;
+	muError_t ret;
+	
+	locateImg = (locateImage_t *)malloc(sizeof(locateImage_t));
+	size = muSize(in->width, in->height);
+
+	yImg = muCreateImage(size, MU_IMG_DEPTH_8U, 1);
+	edgeImg = muCreateImage(size, MU_IMG_DEPTH_8U, 1);
+	otsuImage = muCreateImage(size, MU_IMG_DEPTH_8U, 1);
+
+	muRGB2GrayLevel(in, yImg);
+	muSobel(yImg, edgeImg);
+
+	muOtsuThresholdingT(edgeImg, otsuImage);
+
+	{
+		muImage_t *eroImg, *diImg, *labImg;
+		muImage_t *scaleImg;
+		muSize_t nSize;
+		int w = 0, h = 0;
+		int x = 0, y = 0;
+		MU_8U numLabel = 0;
+		nSize.width = size.width/4;
+		nSize.height = size.height/4;
+		eroImg = muCreateImage(nSize, MU_IMG_DEPTH_8U, 1);
+		diImg = muCreateImage(nSize, MU_IMG_DEPTH_8U, 1);
+		labImg = muCreateImage(nSize, MU_IMG_DEPTH_8U, 1);
+		scaleImg = muCreateImage(nSize, MU_IMG_DEPTH_8U, 1);
+		muSetZero(scaleImg);
+		ret = muDownScale(otsuImage, scaleImg, 4, 4);
+		if(ret != MU_ERR_SUCCESS)
+		{
+			muDebugError(ret);
+		}
+		muSetZero(eroImg);
+		muSetZero(diImg);
+		muSetZero(labImg);
+		muDilate55(scaleImg, diImg);
+		muErode55(diImg, eroImg);
+
+		memset(gBuf, 0, sizeof(char)*TEMP_LEN);
+		sprintf(gBuf, "otsuImage-dia_%d_%dx%d.yuv", gTestCount, scaleImg->width, scaleImg->height);
+		saveYImg(gBuf, scaleImg);
+		mu4ConnectedComponent8u(eroImg, labImg, &numLabel);
+		if(numLabel > 1)
+		{
+			muSeq_t *seq = NULL;
+			muSeqBlock_t *current = NULL;
+			muBoundingBox_t *bp;
+			muDoubleThreshold_t th;
+			muPoint_t rpMin, rpMax;
+			int maxArea = 0;
+			th.min = ((VIDEO_WIDTH/4)*5);
+			th.max = 0x3FFFFFFF;
+			seq = muFindBoundingBox(labImg, numLabel, th);
+			if(seq)
+				current = seq->first;
+			while(current != NULL)
+			{
+				bp = (muBoundingBox_t *) current->data;
+				if(bp->area > maxArea)
+				{
+					maxArea = bp->area;
+					w = bp->width;
+					h = bp->height;
+					x = bp->minx;
+					y = bp->miny;
+				}
+				current = current->next;
+			}
+			if(seq)
+			{
+				muClearSeq(&seq);
+			}
+			else
+			{
+				logError("cannot find the test chart, using the predefine x,y,w,h!!\n");
+				w = scaleImg->width/4;
+				h = scaleImg->height/4;
+				x = scaleImg->width/4;
+				y = scaleImg->height/4;
+			}
+
+			gravity = muFindGravityCenter(otsuImage);
+
+			logInfo("fc: %d test chart location gx:%d gy:%d\n",gTestCount, gravity.x, gravity.y);
+		}
+		else
+		{
+			logError("cannot find the test chart, using the predefine x,y,w,h!!\n");
+			w = scaleImg->width/4;
+			h = scaleImg->height/4;
+			x = scaleImg->width/4;
+			y = scaleImg->height/4;
+		}
+		
+		cropRect.x = x << 2; cropRect.y = y << 2;
+		cropRect.width = w << 2; cropRect.height = h << 2;
+		subYImg = muCreateImage(muSize(cropRect.width, cropRect.height), MU_IMG_DEPTH_8U, 1);
+		subRGBImg = muCreateImage(muSize(cropRect.width, cropRect.height), MU_IMG_DEPTH_8U, 3);
+
+		if(eroImg)
+			muReleaseImage(&eroImg);
+		if(diImg)
+			muReleaseImage(&diImg);
+		if(labImg)
+			muReleaseImage(&labImg);
+		if(scaleImg)
+			muReleaseImage(&scaleImg);
+	}
+
+	if(edgeImg)
+		muReleaseImage(&edgeImg);
+	if(otsuImage)
+		muReleaseImage(&otsuImage);
+
+	if(subYImg)
+		muReleaseImage(&subYImg);
+	if(subRGBImg)
+		muReleaseImage(&subRGBImg);
+
+	if(yImg)
+		muReleaseImage(&yImg);
+
+	return 0;
+}
+
+
+
 //input a rgb image
 static locateImage_t *locatePattern(muImage_t *in, int mode)
 {
@@ -339,7 +758,7 @@ static locateImage_t *locatePattern(muImage_t *in, int mode)
 			x = scaleImg->width/4;
 			y = scaleImg->height/4;
 		}
-
+		//logInfo("fc: %d test chart location x:%d y:%d w:%d h:%d\n",gTestCount, x, y, w, h);
 		cropRect.x = x << 2; cropRect.y = y << 2;
 		cropRect.width = w << 2; cropRect.height = h << 2;
 		subYImg = muCreateImage(muSize(cropRect.width, cropRect.height), MU_IMG_DEPTH_8U, 1);
@@ -357,6 +776,10 @@ static locateImage_t *locatePattern(muImage_t *in, int mode)
 
 	muGetSubImage(yImg, subYImg, cropRect);
 	muGetRGBSubImage(in, subRGBImg, cropRect);
+
+	memset(gBuf, 0, sizeof(char)*TEMP_LEN);
+	sprintf(gBuf, "lp%d.bmp", gTestCount);
+	muSaveBMP(gBuf, subRGBImg);
 
 	if(edgeImg)
 		muReleaseImage(&edgeImg);
@@ -418,6 +841,7 @@ int aaacheckImage(catArg_t arg)
 	muImage_t *inImage;
 	muSize_t size, nSize;
 	locateImage_t *locateImg;
+	gColorSensorInfo = getCamBoxInfo();
 	MU_64F bm, avgY;
 	aeInfo_t info;
 	hsvData_t hsv;
@@ -434,13 +858,23 @@ int aaacheckImage(catArg_t arg)
 		if(ret)
 		{
 			logError("error input image :%s must a jpg or bmp format\n", arg.imageName);
+			report = resultReport(gAbsPath);
+			fprintf(report, "Error Input image: file format not support, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,%.2f,%.2f,%d\n", gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+			if(report)
+				reportFinish(report);
 			return -1;
 		}
 		bmpFlag = 1;
 	}
 	ret = fileExist(arg.imageName);
 	if(ret)
+	{
+		report = resultReport(gAbsPath);
+		fprintf(report, "File is not exit, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,%.2f,%.2f,%d\n", gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+		if(report)
+			reportFinish(report);
 		return -1;
+	}
 
 	memset(aeTestResult, 0, sizeof(char)*16);
 	memset(afTestResult, 0, sizeof(char)*16);
@@ -497,7 +931,7 @@ int aaacheckImage(catArg_t arg)
 	if(bm > AF_TH)
 	{
 		fail = 1;
-		logError("AF:FAIL");
+		logError("AF:FAIL\n");
 		sprintf(afTestResult, "FAIL");
 	}
 
@@ -505,7 +939,7 @@ int aaacheckImage(catArg_t arg)
 	if(info.hisSD < AE_TH)
 	{
 		fail = 1;
-		logError("AE:FAIL");
+		logError("AE:FAIL\n");
 		sprintf(aeTestResult, "FAIL");
 	}
 
@@ -526,12 +960,9 @@ int aaacheckImage(catArg_t arg)
 	if(hsv.avgS > AWB_TH_2)
 	{
 		fail = 1;
-		logError("AWB:FAIL");
+		logError("AWB:FAIL\n");
 		sprintf(awbTestResult, "FAIL");
 	}
-
-	
-
 
 	fprintf(report, "%s,NA,%f,%f,%f,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", arg.imageName, bm, info.hisSD, hsv.avgS, afTestResult, aeTestResult, awbTestResult, flickTestResult, brightnessResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 	logInfo("%s: bm:%f std:%f s:%f CT:%.2f LUX:%.2f Distance:%d\n", arg.imageName, bm, info.hisSD, hsv.avgS, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
@@ -554,6 +985,7 @@ int aaacheckImage(catArg_t arg)
 		free(locateImg);
 	if(report)
 		reportFinish(report);
+
 	return 0;
 }
 
@@ -1047,6 +1479,12 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	muSetZero(rgbImg);
 	memset(videoTemp, 0, sizeof(char)*TEMP_LEN);
 	sprintf(videoTemp, "%s_%s.mp4", tempRealName, timeName);
+	if(psCurrent == NULL)
+	{
+		logError("no preview content!\n");
+		fprintf(report, "No preview content!, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,%.2f,%.2f,%d\n", gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+		everFail = 1;
+	}
 	while(psCurrent != NULL)
 	{
 		castOnly = 0;
@@ -1076,6 +1514,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 #endif
 		startFlag = 0;
 		frameCount = ppsData->startFrameCount;
+		gTestCount = ppsData->startFrameCount;
 		resultSum.bm = 0;
 		resultSum.s = 0;
 		resultSum.y = 0;
@@ -1112,6 +1551,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					everFail = 1;
 				}
 				frameCount++;
+				gTestCount++;
 				continue;
 			}
 			//af check by last FRAMERATE frames.
@@ -1121,6 +1561,8 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 				if(((ppsData->endFrameCount - frameCount) > LAST_FRAME) || castOnly)
 				{
 					deltaE = getDeltaE(cCropImg, pCropImg);
+					//locatePatternTemp(cCropImg);
+
 					//AWB cast cehck
 					if(deltaE > 2)
 					{
@@ -1175,6 +1617,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 						deCount = 0;
 						deFlag = 1;
 						keepCount++;
+						logInfo("keepCount = %d\n", keepCount);
 						if(keepCount > FLICK_TH)
 						{
 							logError("FLICK:FAIL\n");
@@ -1312,6 +1755,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 			if(cCropImg)
 				muReleaseImage(&cCropImg);
 			frameCount++;
+			gTestCount++;
 
 #if DEBUG_OUTPUT_PREVIEW_YUV
 			fwrite(rawImg->imagedata, 1, fullFrameSize, fw);
