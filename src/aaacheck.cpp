@@ -66,286 +66,6 @@ typedef struct _previewScene
 	int totalSecond;
 }previewScene_t;
 
-typedef struct _Link{
-
-		struct _Link *add;
-		int data;
-}Link;
-
-typedef struct _GrayScale{
-		
-		Link *firstptr;
-		int count;
-}GrayScale;
-
-typedef struct _Otsuparameter{
-		
-		int WB;
-		int WO;
-		int MeanB;
-		int MeanO;
-}Otsuparameter;
-// has bug ... Joe 2017 06
-/* Test on 400MHZ SOC which cost 0.8s for D1 resolution */
-muError_t muOtsuThresholdingT(const muImage_t * src, muImage_t * dst)
-{
-	int idx = 0, jdx = 0;
-	int hidx = 0, widx = 0;
-	float BeVar = 0, TempVar = 0;
-	int FixedBeVar = 0, FixedTempVar = 0;
-	int Candidateflag = 0;// initially set the threshold = 0; 
-	short thidx = 0;
-	float tempdenominator = 0, tempdenominator2 = 0;
-	int outidx = 0, Idxnum = 0;
-	int ohidx = 0, owidx = 0;
-	int iheight;
-	int iwidth; 
-	int piwidth;
-	int totalsize;
-	int **InData;
-	int *In;
-	int *OutData;
-	int inidx = 0;
-	unsigned char *in, *out; 
-
-	GrayScale graynum[256] = {NULL, 0};
-
-	Link *temp[256] ={NULL, 0}, *current, *buffer;
-
-	Otsuparameter Thres[256] = {0, 0, 0, 0};
-	
-	muError_t ret;
-
-	ret = muCheckDepth(4, src, MU_IMG_DEPTH_8U, dst, MU_IMG_DEPTH_8U);
-	if(ret)
-	{
-		return ret;
-	}
-
-	if(src->channels != 1 || dst->channels != 1)
-	{
-		return MU_ERR_NOT_SUPPORT;
-	}
-
-	iwidth = src->width;
-
-	iheight = src->height;
-
-	in = src->imagedata;
-
-	out = dst->imagedata;
-
-	//piwidth = Image1->widthStep;
-
-	totalsize = ( iheight * iwidth );
-
-	/***memory allcoate of the input data***/
-
-	InData = (int **) malloc( (iheight) * sizeof(void *) );
-
-	In = (int *) malloc((iheight) * (iwidth) * sizeof(int ) );
-
-	for( inidx = 0; inidx < (iheight); inidx++, In += (iwidth) )
-		InData[ inidx ] = In;
-
-	/**************************************/
-
-	/***memory allcoate of the input data***/
-	
-	OutData = (int *) calloc( iheight * iwidth, sizeof(int) );
-
-	/**************************************/
-
-		/*!
- ****************************************************************************************************************
- * \brief
- *    construt the Histogram parameter (Statistical number). 
- *    
- *    in: image data InData[height][width]          out: graynum[0].count: the total number of ro,
- *                                                      graynum[1].count: the total number of r1,
- *                                                                        .
- *                                                                        .
- *                                                                        .
- *                                                      graynum[255].ocunt: the total number of r255
- *                                                      and the graynum[num].firstptr is the first node 
- *                                                      which could use the link visitation to search each positin
- *                                                      of gray scale num.
- *****************************************************************************************************************
-*/
-	for( idx = 0; idx < (iheight); idx++)
-	{
-		for(jdx = 0; jdx < (iwidth); jdx++)
-			InData[ idx ][ jdx ] = (int) in[ idx * (iwidth) + jdx ];
-	}
-
-	for(hidx = 0; hidx < (iheight); hidx++)//record the data and location of each pixel in whole image
-	{
-		for(widx = 0; widx < (iwidth); widx++)
-		{
-			graynum[ InData[hidx][widx] ].count += 1;
-
-			current = ( Link * ) malloc( sizeof(Link) );
-
-			current->data = ( hidx * (iwidth) ) + widx;
-
-			if( graynum[ InData[hidx][widx] ].firstptr == NULL )
-				graynum[ InData[hidx][widx] ].firstptr = current;
-
-			else
-				temp[ InData[hidx][widx] ]->add = current;
-			
-			current->add = NULL;
-
-			temp[ InData[hidx][widx] ] = current;
-				
-		}
-		
-	}
-
-	free(InData[0]);
-
-	free(InData);
-
-	/*!
- ****************************************************************************************************************
- * \brief
- *    Find the threshold of the Otsu Algorithm.
- *    
- *    WB( T + 1) = WB( T ) + P( T + 1)    MeanB( T + 1 ) = [ MeanB( T ) WB( T ) + ( T + 1) P( T + 1) ] / WB( T + 1)
- *
- *    WO( T + 1) = WO( T ) + P( T + 1)    MeanO( T + 1 ) = [ MeanO( T ) WO( T ) + ( T + 1) P( T + 1) ] / WO( T + 1)
- *
- *    in: graynum[0].count                             out: Maximum between variance BeVar.
- *        graynum[1].count                                             
- *                .                                         The Cadidateflag = the chosen threshold.                
- *                .                                                        
- *                .                                                        
- *        graynum[255].count                                                                                           
- *****************************************************************************************************************
-*/
-	//set the initial value T = 0 of the otsu parameter.
-	
-	Thres[0].WB = graynum[0].count;
-
-	Thres[0].WO = totalsize - graynum[0].count;
-
-	Thres[0].MeanB = 0;
-
-	for( idx = 1; idx < 256; idx++)
-		Thres[0].MeanO +=( (graynum[idx].count) * idx );
-
-	 /*** avoid the denominator being 0. ***/
-
-	if( Thres[0].WB == 0)
-		tempdenominator = 0.0000000001;
-	else
-		tempdenominator = (float)Thres[0].WB;
-
-	if( Thres[0].WO == 0)
-		tempdenominator2 = 0.0000000001;
-	else
-		tempdenominator2 = (float)Thres[0].WO;
-
-	/***************************************/
-
-	BeVar = ( ( (float)Thres[0].WO / tempdenominator ) * Thres[0].MeanB * Thres[0].MeanB )// calculate and set the maximum between variance. 
-	    
-	    - (2 * (float)Thres[0].MeanB * Thres[0].MeanO)
-	         
-		+  ( ( (float)Thres[0].WB / tempdenominator2 ) * Thres[0].MeanO * Thres[0].MeanO);
-
-		for( thidx = 1; thidx < 256; thidx++)//perform in each threshold and find the correspoding threshold.
-	{
-		Thres[ thidx ].WB = Thres[ thidx -1 ].WB + graynum[ thidx ].count;
-
-		Thres[ thidx ].MeanB = Thres[ thidx-1 ].MeanB + ( thidx * graynum[ thidx ].count);
-
-		Thres[ thidx ].WO = Thres[ thidx -1 ].WO - graynum[ thidx ].count;
-
-		Thres[ thidx ].MeanO = Thres[ thidx-1 ].MeanO - ( thidx * graynum[ thidx ].count);
-
-		if( Thres[thidx].WB == 0)
-			tempdenominator = 0.0000000001;
-
-		else
-			tempdenominator = (float)Thres[thidx].WB;
-
-		if( Thres[thidx].WO == 0)
-			tempdenominator2 = 0.0000000001;
-
-		else
-			tempdenominator2 = (float)Thres[thidx].WO;
-
-		TempVar = ( ( (float)Thres[ thidx ].WO / tempdenominator ) * Thres[ thidx ].MeanB * Thres[ thidx ].MeanB ) 
-		    
-		    - (2 * (float)Thres[ thidx ].MeanB * Thres[ thidx ].MeanO)
-		         
-			+  ( ( (float)Thres[ thidx ].WB / tempdenominator2 ) * Thres[ thidx ].MeanO * Thres[ thidx ].MeanO);
-				
-		if( TempVar > BeVar)
-		{
-			BeVar = TempVar;
-
-			Candidateflag = thidx;
-		}
-	}//end loop for
-
-		
-	/*!
- ****************************************************************************************************************
- * \brief
- *   Utilize the chosen threshold to get the binarization outputdata.
- *    
- *    in: Cadidateflag                out: binarition image.
- *                                                      
- *        graynum[0].firstptr                                                                
- *                 .                                                       
- *                 .                                                       
- *                 .                                     
- *        graynum[255].firstptr                                               
- *                                                      
- *                                                      
- *****************************************************************************************************************
-*/
-
-	while( outidx < 256)
-	{
-		while(graynum[ outidx ].firstptr != NULL)
-		{
-			buffer =  graynum[outidx].firstptr;
-
-			Idxnum = graynum[outidx].firstptr->data;
-
-			ohidx = (int)(Idxnum /(double)iwidth);
-
-			owidx = (Idxnum % iwidth);
-		
-			if(outidx <= Candidateflag || (ohidx == 0) || (owidx == 0) || (ohidx == (iheight-1)) || (owidx == (iwidth-1)))
-				OutData[ohidx*iwidth+owidx ] = 0;
-			else
-				OutData[ohidx*iwidth+owidx ] = 255;
-
-			out[ ohidx * iwidth + owidx ] = (unsigned char)OutData[ ohidx * iwidth + owidx ];
-
-			graynum[outidx].firstptr = graynum[outidx].firstptr->add;
-
-			free( buffer );//release each node.
-		}
-				
-		++outidx;
-	}
-
-	free(OutData);
-
-	return MU_ERR_SUCCESS;
-
-
-}
-
-
-
-
-
 
 static colorSensorInfo_t getCamBoxInfo()
 {
@@ -360,9 +80,6 @@ static colorSensorInfo_t getCamBoxInfo()
 		fscanf(log, "%d", &sensorInfo.distance);
 		fclose(log);
 	}
-
-	//printf("%.2f %.2f %d\n", sensorInfo.ct, sensorInfo.lux, sensorInfo.distance);
-
 	return sensorInfo;
 }
 
@@ -526,7 +243,7 @@ static int locatePatternTemp(muImage_t *in)
 	muRGB2GrayLevel(in, yImg);
 	muSobel(yImg, edgeImg);
 
-	muOtsuThresholdingT(edgeImg, otsuImage);
+	muOtsuThresholding(edgeImg, otsuImage);
 
 	{
 		muImage_t *eroImg, *diImg, *labImg;
@@ -859,7 +576,7 @@ int aaacheckImage(catArg_t arg)
 		{
 			logError("error input image :%s must a jpg or bmp format\n", arg.imageName);
 			report = resultReport(gAbsPath);
-			fprintf(report, "Error Input image: file format not support, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,%.2f,%.2f,%d\n", gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+			fprintf(report, "%s:Error Input image: file format not support, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,%.2f,%.2f,%d\n",arg.imageName, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 			if(report)
 				reportFinish(report);
 			return -1;
@@ -870,7 +587,7 @@ int aaacheckImage(catArg_t arg)
 	if(ret)
 	{
 		report = resultReport(gAbsPath);
-		fprintf(report, "File is not exit, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,%.2f,%.2f,%d\n", gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+		fprintf(report, "%s:File is not exit, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,%.2f,%.2f,%d\n", arg.imageName, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 		if(report)
 			reportFinish(report);
 		return -1;
@@ -1482,7 +1199,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 	if(psCurrent == NULL)
 	{
 		logError("no preview content!\n");
-		fprintf(report, "No preview content!, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,%.2f,%.2f,%d\n", gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+		fprintf(report, "%s:No preview content!, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,%.2f,%.2f,%d\n", videoTemp, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 		everFail = 1;
 	}
 	while(psCurrent != NULL)
@@ -1547,7 +1264,7 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 					sprintf(brightnessResult, "NA");
 					sprintf(abnormalTestResult, "FAIL");
 					logError("Abnormal:FAIL\n");
-					fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, brightnessResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
+					fprintf(report, "%s,%d-final,%f,%f,%f,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%d\n", videoTemp, (frameCount+1), result.bm, result.y, result.s, afTestResult, aeTestResult, awbTestResult, flickTestResult, brightnessResult, abnormalTestResult, gColorSensorInfo.ct, gColorSensorInfo.lux, gColorSensorInfo.distance);
 					everFail = 1;
 				}
 				frameCount++;
@@ -1694,7 +1411,6 @@ static int videoCheck(char *rawFile, char *videoName, muSize_t size)
 							memset(buf, 0, sizeof(char)*TEMP_LEN);
 							sprintf(buf, "%s\\%s_%d.bmp", gFailPath, tempRealName, (frameCount+1));
 							logInfo("%s\n", buf);
-							//muSaveBMP(buf, rgbImg);
 							everFail = 1;
 						}
 
@@ -1816,10 +1532,18 @@ int aaacheckVideo(catArg_t arg)
 	char tempBuf[TEMP_LEN];
 	char *tempName;
 	muSize_t size;
+	FILE *report;
 
 	ret = fileExist(arg.videoName);
 	if(ret)
+	{
+		logError("File is not exist!\n");
+		report = resultReport(gAbsPath);
+		fprintf(report, "%s:File is not exist!, NA,NA,NA,NA,FAIL,FAIL,FAIL,FAIL,FAIL,FAIL,NA,NA,NA\n", arg.videoName);
+		if(report)
+			reportFinish(report);
 		return -1;
+	}
 
 	// get resolution and prepare the backgroud image to doing filter.
 	memset(buf, 0, sizeof(char)*MAX_LEN);

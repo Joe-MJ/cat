@@ -325,3 +325,18 @@ void catInit(char *path)
 #endif
 
 }
+
+//avrdude -c arduino -P com4 -b 115200 -p ATMEGA328p -U flash:w:E:\camBox.ino.hex:i
+void mucUpgrade(int com, char *path)
+{
+	char buf[TEMP_LEN];
+
+	if(fileExist(path))
+		return;
+
+	memset(buf, 0, sizeof(char)*TEMP_LEN);
+	sprintf(buf, ".\\prebuilt\\avrdude.exe -c wiring -P com%d -b 115200 -p m2560 -U flash:w:%s:i", com, path);
+	logInfo("mcuUpgrade %s\n", buf);
+	runCommand(buf, NULL);
+	return;
+}

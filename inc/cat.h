@@ -15,11 +15,11 @@
 
 #define CAT_VERSION	"0.0.1"
 #define CAMBOX_ENV_FILE	".camBoxEnv.cbe"
-#define DEBUG						1
+#define DEBUG						0
 #define DEBUG_OUTPUT				0
 #define DEBUG_OUTPUT_PREVIEW_BMP	0
 #define DEBUG_OUTPUT_PREVIEW_YUV	0
-#define DEBUG_OUTPUT_RAW_FILE		1
+#define DEBUG_OUTPUT_RAW_FILE		0
 #define DEBUG_OUTPUT_TEST_FILE		1
 #define __RGBWLED__
 
@@ -41,6 +41,7 @@
 
 #define FLAG_3A_VIDEO					0x00008000
 #define FLAG_3A_IMAGE					0x00010000
+#define FLAG_MCU_UPGRADE				0x00020000
 
 #define MAX_LEN			512
 #define TEMP_LEN		128
@@ -78,6 +79,7 @@ typedef struct _catArg
 	int chipName;
 	char *imageName;
 	char *videoName;
+	char *upgradeName;
 }catArg_t;
 
 typedef struct _ctlArg
@@ -158,4 +160,5 @@ extern void genInitFolder(char *path);
 extern void genTestFileFolder(char *path);
 extern void copyFile(char *src, char *dst);
 extern char *getTimeName();
+extern void mucUpgrade(int com, char *path);
 #endif

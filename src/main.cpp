@@ -108,6 +108,7 @@ static void help()
 "    --cal[-l]\tcalibration the RGBW LED meet the target Lux e.g. --com 4 --cal\n"
 "    --video[-v]\t auto check 3A for case video e.g. cat.exe --chip 95 --video d:\\testVideo.mp4 (only execute without cam box controlling)\n"
 "    --image[-a]\t auto check 3A for image e.g. cat.exe --chip 55 --image d:\\testCapture.jpg (only execute without cam box controlling)\n"
+"    --upgrade[-x]\t mcu upgrade e.g. cat.exe --com 3 --upgrade e:\cambox.info.hex\n"
 	);
 }
 
@@ -167,11 +168,12 @@ int _tmain(int argc, TCHAR** argv)
 			{_T("cal"), ARG_NULL, 0, 'l'},
 			{_T("video"), ARG_REQ, 0, 'v'},
 			{_T("image"), ARG_REQ, 0, 'a'},
+			{_T("upgrade"), ARG_REQ, 0, 'x'},
 			{_T("help"), ARG_NULL, 0, 'h'},
 			{ARG_NULL, ARG_NULL, ARG_NULL, ARG_NULL}
 		};
 
-		int c = getopt_long(argc, argv, _T("-t:j:d:u:srgbie:m:w:cpflv:a:h"), longOptions, &optionIndex);
+		int c = getopt_long(argc, argv, _T("-t:j:d:u:srgbie:m:w:cpflv:a:x:h"), longOptions, &optionIndex);
 		if(c == -1)
 			break;
 
@@ -253,6 +255,10 @@ int _tmain(int argc, TCHAR** argv)
 			modeFlag |= FLAG_3A_IMAGE;
 			catArg.imageName = optarg;
 			break;
+		case 'x':
+			modeFlag |= FLAG_MCU_UPGRADE;
+			catArg.upgradeName = optarg;
+			break;
 		case 'h':
 		default:
 			help();
@@ -279,7 +285,7 @@ int _tmain(int argc, TCHAR** argv)
 	if((modeFlag & FLAG_CAMBOX_CD) || (modeFlag & FLAG_CAMBOX_RGBW_CAL) || (modeFlag & FLAG_CAMBOX_CT) || (modeFlag & FLAG_CAMBOX_GET_DISTANCE) 
 		|| (modeFlag & FLAG_CAMBOX_GET_R) || (modeFlag & FLAG_CAMBOX_GET_G) || (modeFlag & FLAG_CAMBOX_GET_B) || (modeFlag & FLAG_CAMBOX_GET_I)
 		|| (modeFlag & FLAG_CAMBOX_LED_CTRL) || (modeFlag & FLAG_CAMBOX_SET_RGB) || (modeFlag & FLAG_CAMBOX_COLOR_SENSOR) || (modeFlag & FLAG_CAMBOX_GET_PI)
-		|| (modeFlag & FLAG_CAMBOX_RESET_CD) || (modeFlag & FLAG_CAMBOX_SET_RGBW))
+		|| (modeFlag & FLAG_CAMBOX_RESET_CD) || (modeFlag & FLAG_CAMBOX_SET_RGBW) || (modeFlag &FLAG_MCU_UPGRADE))
 	{
 		if(modeFlag & FLAG_CAMBOX_COM)
 		{
@@ -296,6 +302,10 @@ int _tmain(int argc, TCHAR** argv)
 			else if(modeFlag & FLAG_CAMBOX_RGBW_CAL)
 			{
 				deleteSerialPort(0);
+			}
+			else if(modeFlag & FLAG_MCU_UPGRADE)
+			{
+				mucUpgrade(com, catArg.upgradeName);
 			}
 			else
 			{
